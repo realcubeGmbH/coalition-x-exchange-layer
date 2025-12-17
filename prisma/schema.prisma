@@ -1,0 +1,937 @@
+// Coalition X - Database Schema
+// ZIA KPI Tracking Platform for Real Estate Sustainability
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Phase 1: Exchange Layer + Connector 1
+
+
+// Organization - multi-tenant root entity
+model Organization {
+  id     String    @id @default(cuid())
+  name   String
+  type   OrgType
+  status OrgStatus @default(ACTIVE)
+
+  // API access for partners
+  apiKey     String? @unique
+  apiKeyHash String?
+
+  users       User[]
+  buildings   Building[]
+  apiTokens   ApiToken[]
+  auditLogs   AuditLog[]
+  submissions Submission[]
+
+  // Future
+  webhooks       WebhookConfig[]
+  partnerRequest PartnerRequest?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([apiKey])
+  @@index([status])
+  @@index([type])
+}
+
+// Building - the main entity
+model Building {
+  id String @id @default(cuid())
+
+  // Multi-tenant - each building belongs to one org
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String?
+  address     String?
+  description String?
+
+  // Where did this data come from?
+  dataSource   DataSource @default(MANUAL)
+  sourceTag    SourceTag  @default(MANUAL)
+  submittedVia String?
+  externalId   String?  //Partner's ID 
+
+  // KPI data
+  propertyData        PropertyData?
+  energyPerformance   EnergyPerformance?
+  energyConsumption   EnergyConsumption[]
+  greenhouseGases     GreenhouseGases[]
+  renovationHistory   RenovationHistory[]
+  compatibilityChecks CompatibilityCheck[]
+
+  // Future: signed documents
+  signedDocuments SignedDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId])
+  @@index([name])
+  @@index([externalId])
+}
+
+// KPI 1-6: Property data (permit, construction, areas, taxonomy)
+model PropertyData {
+  id         String   @id @default(cuid())
+  buildingId String   @unique
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  // KPI 1: Building permit
+  dateBuildingPermitApplication DateTime?
+  yearOfConstruction            Int?
+
+  // KPI 3: Primary use
+  primaryUseOfBuilding BuildingUseType?
+
+  // KPI 4: Fossil fuel usage
+  usageForFossilFuels Float?
+  fossilFuelsBasis    FossilFuelsBasis?
+
+  // KPI 5: Surface areas (m²)
+  usableAreaHeated            Float?
+  usableAreaCooled            Float?
+  netFloorAreaHeated          Float?
+  netFloorAreaCooled          Float?
+  grossExternalAreaIPMS1      Float?
+  totalGrossInternalAreaIPMS2 Float?
+  rentalArea                  Float?
+
+  // KPI 6: Taxonomy alignment
+  taxonomyAlignment TaxonomyAlignment?
+
+  // Supporting fields
+  buildingCategory     BuildingCategory?
+  activityInValueChain ActivityInValueChain?
+  listedBuilding       Boolean? // Denkmalschutz
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buildingId])
+  @@index([primaryUseOfBuilding])
+  @@index([buildingCategory])
+}
+
+// KPI 2: Renovation history
+model RenovationHistory {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  year           Int
+  renovationType RenovationType?
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([buildingId, year])
+  @@index([buildingId, year])
+}
+
+// KPI 7: Energy Performance Certificate
+model EnergyPerformance {
+  id         String   @id @default(cuid())
+  buildingId String   @unique
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  // Certificate file & class
+  epcFile  String?
+  epcClass String? 
+
+  // Primary energy (kWh/m²a)
+  epcPrimaryEnergyConsumption Float? 
+  epcPrimaryEnergyDemand      Float? 
+
+  // End energy consumption breakdown
+  epcEndEnergyConsumption            Float?
+  epcEndEnergyConsumptionHeating     Float?
+  epcEndEnergyConsumptionElectricity Float?
+
+  // End energy demand breakdown
+  epcEndEnergyDemand            Float?
+  epcEndEnergyDemandHeating     Float?
+  epcEndEnergyDemandElectricity Float?
+
+  // Certificate metadata
+  epcExpiryDate DateTime?
+  epcType       EPCType?
+
+  // Calculated totals
+  totalEndEnergyConsumption Float?
+  totalEndEnergyDemand      Float?
+
+  buildingCategory BuildingCategory?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buildingId])
+  @@index([epcType])
+}
+
+// KPI 8: Energy consumption (yearly/monthly time series)
+model EnergyConsumption {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  year  Int
+  month Int? // optional for monthly data
+
+  heatingMedium              HeatingMedium?
+  actualEndEnergyConsumption Float? // kWh p.a.
+  consumptionBreakdown       Json?  // detailed breakdown
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([buildingId, year, month])
+  @@index([buildingId, year])
+}
+
+// KPI 9: GHG emissions (yearly time series)
+model GreenhouseGases {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  year Int
+
+  // Emissions (t CO2e p.a.)
+  directGHGEmissions             Float? // Scope 1
+  indirectGHGEmissionsFromEnergy Float? // Scope 2
+  otherIndirectGHGEmissions      Float? // Scope 3
+  shareOfEstimatedGHGEmissions   Float? // % estimated
+
+  // Methodology
+  indirectGHGMethodology         GHGMethodology?
+  supplierSpecificEmissionFactor Float? // kg CO2/kWh
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([buildingId, year])
+  @@index([buildingId, year])
+}
+
+// Validation results for Coalition X compatibility
+model CompatibilityCheck {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  checkDate    DateTime @default(now())
+  isCompatible Boolean
+  issues       Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([buildingId, checkDate])
+}
+
+// User accounts
+model User {
+  id    String   @id @default(cuid())
+  email String   @unique
+  name  String
+  role  UserRole
+
+  passwordHash  String
+  emailVerified Boolean @default(false)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiTokens      ApiToken[]
+  auditLogs      AuditLog[]
+  submissions    Submission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+// OAuth JWT tokens (1h access, 30d refresh)
+model ApiToken {
+  id        String @id @default(cuid())
+  token     String @unique
+  tokenHash String
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  name   String?
+  scopes String[]
+
+  expiresAt        DateTime
+  refreshToken     String?   @unique
+  refreshExpiresAt DateTime?
+
+  lastUsedAt DateTime?
+  lastUsedIp String?
+  usageCount Int       @default(0)
+
+  revoked   Boolean   @default(false)
+  revokedAt DateTime?
+  revokedBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@index([revoked])
+}
+
+// Audit log - 30 day retention
+model AuditLog {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action     AuditAction
+  resource   String
+  resourceId String?
+
+  method     String?
+  endpoint   String?
+  statusCode Int?
+
+  ipAddress String?
+  userAgent String?
+
+  payload  Json?
+  response Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([resource, resourceId])
+}
+
+// Tracks KPI submissions (single or batch)
+model Submission {
+  id String @id @default(cuid()) // also serves as transaction ID
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  submissionType SubmissionType
+  resourceType   String
+  resourceId     String?
+
+  sourceTag SourceTag @default(MANUAL)
+
+  status       SubmissionStatus   @default(PENDING)
+  totalRecords Int                @default(1)
+  successCount Int                @default(0)
+  failureCount Int                @default(0)
+
+  validationStatus ValidationStatus @default(PENDING)
+  validationErrors Json?
+  errors           Json?
+  warnings         Json?
+
+  idempotencyKey String? @unique
+
+  ipAddress      String?
+  userAgent      String?
+  requestPayload Json?
+  responseTime   Int?
+
+  kpiVersion String?
+  ingestTime DateTime  @default(now())
+  enrichedAt DateTime?
+
+  batchItems BatchSubmissionItem[]
+
+  // Future
+  queueItem         QueueItem?
+  fraunhoferRequest FraunhoferRequest?
+
+  submittedAt DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([organizationId, submittedAt])
+  @@index([status])
+  @@index([validationStatus])
+  @@index([idempotencyKey])
+  @@index([sourceTag])
+}
+
+// Individual items in a batch submission
+model BatchSubmissionItem {
+  id String @id @default(cuid())
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  itemIndex  Int
+  externalId String?
+  resourceId String?
+
+  status SubmissionStatus
+  errors Json?
+
+  itemPayload Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([submissionId, itemIndex])
+  @@index([submissionId])
+}
+
+// Phase 2+: Additional Connectors
+
+// Connector 2: Fraunhofer queue
+model QueueItem {
+  id String @id @default(cuid())
+
+  submissionId String     @unique
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  queueName   String      @default("fraunhofer")
+  queueStatus QueueStatus @default(PENDING)
+  priority    Int         @default(0)
+
+  attemptCount Int       @default(0)
+  maxAttempts  Int       @default(5)
+  nextRetryAt  DateTime?
+  lastError    String?
+
+  queuedAt     DateTime  @default(now())
+  processingAt DateTime?
+  completedAt  DateTime?
+  failedAt     DateTime?
+
+  isDeadLetter     Boolean   @default(false)
+  deadLetterAt     DateTime?
+  deadLetterReason String?
+
+  @@index([queueStatus, priority, queuedAt])
+  @@index([queueName, queueStatus])
+  @@index([isDeadLetter])
+  @@index([nextRetryAt])
+}
+
+model FraunhoferRequest {
+  id String @id @default(cuid())
+
+  submissionId String     @unique
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  status          FraunhoferStatus @default(PENDING)
+  requestPayload  Json?
+  responsePayload Json?
+
+  endpoint     String?
+  statusCode   Int?
+  errorMessage String?
+
+  attemptCount  Int       @default(0)
+  maxAttempts   Int       @default(3)
+  lastAttemptAt DateTime?
+
+  callbackId       String?   @unique
+  callbackReceived Boolean   @default(false)
+  pollCount        Int       @default(0)
+  lastPolledAt     DateTime?
+
+  computedAt DateTime?
+  verified   Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([callbackId])
+}
+
+// Connector 3: Trust layer signing
+model SigningRequest {
+  id String @id @default(cuid())
+
+  buildingId String
+
+  status         SigningStatus @default(PENDING)
+  requestPayload Json?
+
+  trustLayerRequestId String? @unique
+  holderIdentity      String?
+  verifierDetails     Json?
+
+  attemptCount  Int       @default(0)
+  maxAttempts   Int       @default(3)
+  lastAttemptAt DateTime?
+  lastError     String?
+
+  signedDocument   SignedDocument? @relation(fields: [signedDocumentId], references: [id])
+  signedDocumentId String?         @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buildingId])
+  @@index([status])
+  @@index([trustLayerRequestId])
+}
+
+model SignedDocument {
+  id String @id @default(cuid())
+
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  filename    String
+  contentType String @default("application/pdf")
+  fileSize    Int?
+  storageUrl  String
+  checksum    String?
+
+  signedAt           DateTime
+  signatureTimestamp DateTime?
+  signerIdentity     String?
+  signatureContext   Json?
+
+  verified            Boolean   @default(false)
+  verifiedAt          DateTime?
+  verificationDetails Json?
+
+  expiresAt DateTime?
+
+  signingRequest SigningRequest?
+  accessGrants   DocumentAccessGrant[]
+  accessLogs     DocumentAccessLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buildingId])
+  @@index([signedAt])
+  @@index([expiresAt])
+}
+
+// Connector 4: Document distribution
+model DocumentAccessGrant {
+  id String @id @default(cuid())
+
+  documentId String
+  document   SignedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  granteeType GranteeType
+  granteeId   String
+  granteeName String?
+
+  grantedAt DateTime  @default(now())
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  canDownload Boolean @default(true)
+  canVerify   Boolean @default(true)
+
+  dailyLimit   Int       @default(100)
+  currentCount Int       @default(0)
+  limitResetAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([documentId, granteeType, granteeId])
+  @@index([granteeType, granteeId])
+  @@index([documentId])
+  @@index([expiresAt])
+}
+
+model DocumentAccessLog {
+  id String @id @default(cuid())
+
+  documentId String
+  document   SignedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  accessorType GranteeType
+  accessorId   String
+
+  action     AccessAction
+  method     String
+  endpoint   String
+  statusCode Int
+
+  ipAddress String?
+  userAgent String?
+  duration  Int?
+
+  verified           Boolean?
+  verificationResult Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([documentId, createdAt])
+  @@index([accessorType, accessorId, createdAt])
+  @@index([action, createdAt])
+}
+
+// Other utilities
+
+model DataVersion {
+  id String @id @default(cuid())
+
+  entityType String
+  entityId   String
+
+  version      Int   @default(1)
+  previousData Json?
+  currentData  Json
+
+  changeType    ChangeType
+  changedFields String[]
+
+  organizationId String?
+  userId         String?
+  submissionId   String?
+
+  mergeSource    String?
+  mergeConflicts Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([entityType, entityId, version])
+  @@index([submissionId])
+}
+
+model WebhookConfig {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name   String
+  url    String
+  secret String?
+
+  events   String[]
+  isActive Boolean  @default(true)
+
+  lastTriggeredAt DateTime?
+  lastStatusCode  Int?
+  failureCount    Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+model PartnerRequest {
+  id String @id @default(cuid())
+
+  companyName  String
+  contactName  String
+  contactEmail String @unique
+  website      String?
+
+  integrationType String
+  estimatedVolume Int?
+  useCase         String
+
+  status          PartnerRequestStatus @default(PENDING)
+  reviewedBy      String?
+  reviewNotes     String?
+  rejectionReason String?
+
+  organizationId String?       @unique
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  requestedAt DateTime  @default(now())
+  reviewedAt  DateTime?
+  approvedAt  DateTime?
+
+  @@index([status])
+  @@index([contactEmail])
+}
+
+// KPI definitions for validation
+model KpiDefinition {
+  id String @id @default(cuid())
+
+  kpiKey    String @unique
+  kpiNumber String
+
+  targetModel String
+  targetField String
+
+  dataType   KpiDataType
+  enumValues String[]
+  required   Boolean     @default(false)
+  minValue   Float?
+  maxValue   Float?
+  format     String?
+
+  nameEn String
+  nameDe String
+  unit   String?
+  domain String
+  list   KpiList
+
+  version      Int       @default(1)
+  isActive     Boolean   @default(true)
+  deprecatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kpiKey, isActive])
+  @@index([list, isActive])
+  @@index([targetModel])
+}
+
+// ===========================================
+// Enums
+// ===========================================
+
+enum OrgType {
+  ACCREDITED_PARTNER
+  CLIENT
+  ADMIN
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum UserRole {
+  ADMIN
+  PARTNER_ADMIN
+  PARTNER_USER
+  CLIENT_ADMIN
+  CLIENT_USER
+}
+
+enum DataSource {
+  MANUAL
+  API
+  BULK_UPLOAD
+}
+
+enum SourceTag {
+  MANUAL
+  PARTNER
+}
+
+enum SubmissionType {
+  SINGLE
+  BATCH
+}
+
+enum SubmissionStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  PARTIAL_SUCCESS
+  FAILED
+}
+
+enum ValidationStatus {
+  PENDING
+  VALIDATING
+  PASSED
+  FAILED
+}
+
+enum AuditAction {
+  AUTH_LOGIN
+  AUTH_LOGOUT
+  AUTH_FAILED
+  API_TOKEN_CREATED
+  API_TOKEN_USED
+  API_TOKEN_REVOKED
+  BUILDING_CREATED
+  BUILDING_UPDATED
+  BUILDING_DELETED
+  KPI_SUBMITTED
+  KPI_UPDATED
+  KPI_MERGED
+  SUBMISSION_CREATED
+  SUBMISSION_COMPLETED
+  SUBMISSION_FAILED
+  BATCH_STARTED
+  BATCH_COMPLETED
+  VALIDATION_PASSED
+  VALIDATION_FAILED
+  DATA_ENRICHED
+  DATA_MERGED
+  DATA_VERSIONED
+  QUEUE_ITEM_CREATED
+  QUEUE_ITEM_COMPLETED
+  QUEUE_ITEM_FAILED
+  QUEUE_ITEM_RETRY
+  QUEUE_ITEM_DEAD_LETTER
+  FRAUNHOFER_REQUEST_SENT
+  FRAUNHOFER_CALLBACK_RECEIVED
+  FRAUNHOFER_VERIFIED
+  SIGNING_REQUESTED
+  SIGNING_COMPLETED
+  SIGNING_FAILED
+  DOCUMENT_VERIFIED
+  DOCUMENT_ACCESSED
+  DOCUMENT_DOWNLOADED
+  ACCESS_GRANTED
+  ACCESS_REVOKED
+  PARTNER_REQUEST_CREATED
+  PARTNER_REQUEST_APPROVED
+  PARTNER_REQUEST_REJECTED
+  WEBHOOK_TRIGGERED
+  WEBHOOK_FAILED
+}
+
+enum BuildingUseType {
+  RESIDENTIAL
+  RETAIL
+  OFFICE
+  HOTEL_ACCOMMODATION_GASTRONOMY
+  HEALTHCARE_SOCIAL
+  INDUSTRIAL_LOGISTICS
+  INFRASTRUCTURE
+  RECREATION_CULTURE_EDUCATION
+  MIXED_USE
+  OTHER
+}
+
+enum BuildingCategory {
+  RESIDENTIAL
+  NON_RESIDENTIAL
+}
+
+enum ActivityInValueChain {
+  CONSTRUCTION
+  EXISTING_BUILDING
+  RENOVATION
+  DEMOLITION
+}
+
+enum TaxonomyAlignment {
+  YES_CA
+  YES_CE
+  YES_CM
+  NO
+}
+
+enum FossilFuelsBasis {
+  BY_NET_BASE_RENT
+  BY_REAL_ESTATE_VALUE
+}
+
+enum RenovationType {
+  MORE_THAN_25_PERCENT_ENVELOPE_RENOVATED
+  AT_LEAST_30_PERCENT_ENERGY_REDUCTION
+  MORE_THAN_25_PERCENT_COST_OF_VALUE
+  OTHER
+}
+
+enum EPCType {
+  CONSUMPTION_BASED
+  DEMAND_BASED
+  NO_OBLIGATION
+  NON_EXISTENT
+}
+
+enum HeatingMedium {
+  DISTRICT_HEATING
+  GAS
+  OIL
+  ELECTRICITY
+  HEAT_PUMP
+  HYBRID
+}
+
+enum GHGMethodology {
+  MARKET_BASED
+  LOCATION_BASED
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+enum ChangeType {
+  CREATED
+  UPDATED
+  MERGED
+  ROLLBACK
+}
+
+enum FraunhoferStatus {
+  PENDING
+  SENT
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum SigningStatus {
+  PENDING
+  REQUESTED
+  PROCESSING
+  SIGNED
+  FAILED
+}
+
+enum GranteeType {
+  BANK
+  INVESTOR
+  ORGANIZATION
+}
+
+enum AccessAction {
+  STATUS_CHECK
+  DOWNLOAD
+  VERIFY
+}
+
+enum PartnerRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum KpiDataType {
+  DATE
+  INTEGER
+  FLOAT
+  STRING
+  ENUM
+  BOOLEAN
+}
+
+enum KpiList {
+  BASIC
+  EXTENDED
+}
