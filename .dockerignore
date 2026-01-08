@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Next.js build output
+.next
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+
+# Environment files (use env_file in docker-compose instead)
+.env*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Example/reference files
+docker-example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+

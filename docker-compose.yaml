@@ -1,0 +1,72 @@
+version: '2.2'
+
+services:
+  coalition-x-app:
+    image: '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/coalition-x-repository-${ENVIRONMENT}'
+    container_name: coalition-x-app
+    restart: 'always'
+    ports:
+      - '3000:3000'
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: 'coalition-x-app-logs-${ENVIRONMENT}'
+    env_file:
+      - '.env'
+    environment:
+      - VIRTUAL_HOST=${API_HOST}
+      - VIRTUAL_PORT=3000
+      - LETSENCRYPT_HOST=${API_HOST}
+      - VIRTUAL_PATH=/
+    networks:
+      - coalition-x
+
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - conf:/etc/nginx/conf.d
+      - vhost:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./nginx/:/etc/nginx/conf.d/
+    depends_on:
+      - coalition-x-app
+    networks:
+      - coalition-x
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    container_name: nginx-proxy-acme
+    restart: always
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - acme:/etc/acme.sh
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    volumes_from:
+      - nginx-proxy
+    depends_on:
+      - nginx-proxy
+    networks:
+      - coalition-x
+
+volumes:
+  conf:
+  vhost:
+  html:
+  certs:
+  acme:
+
+networks:
+  coalition-x:
+    name: coalition-x
+    external: false
+
