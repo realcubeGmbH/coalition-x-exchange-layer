@@ -7,67 +7,60 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-// Phase 1: Exchange Layer + Connector 1
+// =============================================================================
+// Core Multi-Tenant Models
+// =============================================================================
 
-
-// Organization - multi-tenant root entity
 model Organization {
   id     String    @id @default(cuid())
   name   String
   type   OrgType
   status OrgStatus @default(ACTIVE)
 
-  // API access for partners
+  // OAuth 2.0 Client Credentials
+  clientId         String  @unique @default(cuid())
+  clientSecretHash String?
+
+  // Legacy API key (deprecated, use OAuth)
   apiKey     String? @unique
   apiKeyHash String?
 
-  users       User[]
-  buildings   Building[]
-  apiTokens   ApiToken[]
-  auditLogs   AuditLog[]
-  submissions Submission[]
-
-  // Future
+  users          User[]
+  assets         Asset[]
+  kpiRecords     KpiRecord[]
+  apiTokens      ApiToken[]
+  auditLogs      AuditLog[]
+  submissions    Submission[]
   webhooks       WebhookConfig[]
   partnerRequest PartnerRequest?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([clientId])
   @@index([apiKey])
   @@index([status])
   @@index([type])
 }
 
-// Building - the main entity
-model Building {
-  id String @id @default(cuid())
-
-  // Multi-tenant - each building belongs to one org
+model Asset {
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  externalId  String?
   name        String?
   address     String?
   description String?
 
-  // Where did this data come from?
   dataSource   DataSource @default(MANUAL)
   sourceTag    SourceTag  @default(MANUAL)
   submittedVia String?
-  externalId   String?  //Partner's ID 
 
-  // KPI data
-  propertyData        PropertyData?
-  energyPerformance   EnergyPerformance?
-  energyConsumption   EnergyConsumption[]
-  greenhouseGases     GreenhouseGases[]
-  renovationHistory   RenovationHistory[]
-  compatibilityChecks CompatibilityCheck[]
-
-  // Future: signed documents
+  kpiRecords      KpiRecord[]
   signedDocuments SignedDocument[]
 
   createdAt DateTime @default(now())
@@ -79,181 +72,104 @@ model Building {
   @@index([externalId])
 }
 
-// KPI 1-6: Property data (permit, construction, areas, taxonomy)
-model PropertyData {
-  id         String   @id @default(cuid())
-  buildingId String   @unique
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+// =============================================================================
+// KPI Data Storage
+// =============================================================================
 
-  // KPI 1: Building permit
-  dateBuildingPermitApplication DateTime?
-  yearOfConstruction            Int?
+model SchemaRegistry {
+  id          String  @id @default(cuid())
+  version     String  @unique
+  name        String?
+  description String?
+  schema    Json
+  checksum  String?
+  isActive  Boolean @default(true)
 
-  // KPI 3: Primary use
-  primaryUseOfBuilding BuildingUseType?
+  changelog    String?
+  deprecatedAt DateTime?
 
-  // KPI 4: Fossil fuel usage
-  usageForFossilFuels Float?
-  fossilFuelsBasis    FossilFuelsBasis?
-
-  // KPI 5: Surface areas (m²)
-  usableAreaHeated            Float?
-  usableAreaCooled            Float?
-  netFloorAreaHeated          Float?
-  netFloorAreaCooled          Float?
-  grossExternalAreaIPMS1      Float?
-  totalGrossInternalAreaIPMS2 Float?
-  rentalArea                  Float?
-
-  // KPI 6: Taxonomy alignment
-  taxonomyAlignment TaxonomyAlignment?
-
-  // Supporting fields
-  buildingCategory     BuildingCategory?
-  activityInValueChain ActivityInValueChain?
-  listedBuilding       Boolean? // Denkmalschutz
+  kpiRecords KpiRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([buildingId])
-  @@index([primaryUseOfBuilding])
-  @@index([buildingCategory])
+  @@index([version])
+  @@index([checksum])
 }
 
-// KPI 2: Renovation history
-model RenovationHistory {
-  id         String   @id @default(cuid())
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+model ValidationRule {
+  id      String @id @default(cuid())
+  name    String
+  version Int    @default(1)
+  rules   Json
 
-  year           Int
-  renovationType RenovationType?
-  notes          String?
+  isActive  Boolean @default(false)
+  isDefault Boolean @default(false)
+
+  previousVersionId String?
+  previousVersion   ValidationRule?  @relation("RuleVersionChain", fields: [previousVersionId], references: [id])
+  nextVersions      ValidationRule[] @relation("RuleVersionChain")
+
+  description String?
+  changedBy   String?
+  changeNotes String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([buildingId, year])
-  @@index([buildingId, year])
+  @@unique([name, version])
+  @@index([isActive])
+  @@index([name, isActive])
 }
 
-// KPI 7: Energy Performance Certificate
-model EnergyPerformance {
-  id         String   @id @default(cuid())
-  buildingId String   @unique
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+model KpiRecord {
+  id              String  @id @default(cuid())
+  assetId         String
+  organizationId  String
+  submissionId    String? @unique
+  dataVersion     Int
+  schemaVersionId String
+  kpiData         Json
+  checksum        String?
+  externalAssetId String?
 
-  // Certificate file & class
-  epcFile  String?
-  epcClass String? 
+  asset          Asset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission     Submission?    @relation(fields: [submissionId], references: [id])
+  schemaRegistry SchemaRegistry @relation(fields: [schemaVersionId], references: [id])
 
-  // Primary energy (kWh/m²a)
-  epcPrimaryEnergyConsumption Float? 
-  epcPrimaryEnergyDemand      Float? 
-
-  // End energy consumption breakdown
-  epcEndEnergyConsumption            Float?
-  epcEndEnergyConsumptionHeating     Float?
-  epcEndEnergyConsumptionElectricity Float?
-
-  // End energy demand breakdown
-  epcEndEnergyDemand            Float?
-  epcEndEnergyDemandHeating     Float?
-  epcEndEnergyDemandElectricity Float?
-
-  // Certificate metadata
-  epcExpiryDate DateTime?
-  epcType       EPCType?
-
-  // Calculated totals
-  totalEndEnergyConsumption Float?
-  totalEndEnergyDemand      Float?
-
-  buildingCategory BuildingCategory?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([buildingId])
-  @@index([epcType])
-}
-
-// KPI 8: Energy consumption (yearly/monthly time series)
-model EnergyConsumption {
-  id         String   @id @default(cuid())
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  year  Int
-  month Int? // optional for monthly data
-
-  heatingMedium              HeatingMedium?
-  actualEndEnergyConsumption Float? // kWh p.a.
-  consumptionBreakdown       Json?  // detailed breakdown
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([buildingId, year, month])
-  @@index([buildingId, year])
-}
-
-// KPI 9: GHG emissions (yearly time series)
-model GreenhouseGases {
-  id         String   @id @default(cuid())
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  year Int
-
-  // Emissions (t CO2e p.a.)
-  directGHGEmissions             Float? // Scope 1
-  indirectGHGEmissionsFromEnergy Float? // Scope 2
-  otherIndirectGHGEmissions      Float? // Scope 3
-  shareOfEstimatedGHGEmissions   Float? // % estimated
-
-  // Methodology
-  indirectGHGMethodology         GHGMethodology?
-  supplierSpecificEmissionFactor Float? // kg CO2/kWh
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([buildingId, year])
-  @@index([buildingId, year])
-}
-
-// Validation results for Coalition X compatibility
-model CompatibilityCheck {
-  id         String   @id @default(cuid())
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-
-  checkDate    DateTime @default(now())
-  isCompatible Boolean
-  issues       Json?
+  validationStatus ValidationStatus @default(PENDING)
+  validationErrors Json?
+  source           DataSource       @default(API)
 
   createdAt DateTime @default(now())
 
-  @@index([buildingId, checkDate])
+  @@unique([assetId, dataVersion])
+  @@index([assetId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([schemaVersionId])
+  @@index([validationStatus])
+  @@index([checksum])
 }
 
-// User accounts
+// =============================================================================
+// User & Authentication
+// =============================================================================
+
 model User {
-  id    String   @id @default(cuid())
-  email String   @unique
-  name  String
-  role  UserRole
-
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  role          UserRole
   passwordHash  String
-  emailVerified Boolean @default(false)
+  emailVerified Boolean  @default(false)
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  apiTokens      ApiToken[]
-  auditLogs      AuditLog[]
-  submissions    Submission[]
+
+  apiTokens   ApiToken[]
+  auditLogs   AuditLog[]
+  submissions Submission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -262,7 +178,6 @@ model User {
   @@index([email])
 }
 
-// OAuth JWT tokens (1h access, 30d refresh)
 model ApiToken {
   id        String @id @default(cuid())
   token     String @unique
@@ -296,10 +211,12 @@ model ApiToken {
   @@index([revoked])
 }
 
-// Audit log - 30 day retention
-model AuditLog {
-  id String @id @default(cuid())
+// =============================================================================
+// Audit & Submission Tracking
+// =============================================================================
 
+model AuditLog {
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String?
@@ -313,11 +230,14 @@ model AuditLog {
   endpoint   String?
   statusCode Int?
 
-  ipAddress String?
-  userAgent String?
+  ipAddress      String?
+  userAgent      String?
+  requestHeaders Json?
 
   payload  Json?
   response Json?
+
+  schemaVersion String?
 
   createdAt DateTime @default(now())
 
@@ -327,10 +247,8 @@ model AuditLog {
   @@index([resource, resourceId])
 }
 
-// Tracks KPI submissions (single or batch)
 model Submission {
-  id String @id @default(cuid()) // also serves as transaction ID
-
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String?
@@ -339,13 +257,12 @@ model Submission {
   submissionType SubmissionType
   resourceType   String
   resourceId     String?
+  sourceTag      SourceTag      @default(MANUAL)
 
-  sourceTag SourceTag @default(MANUAL)
-
-  status       SubmissionStatus   @default(PENDING)
-  totalRecords Int                @default(1)
-  successCount Int                @default(0)
-  failureCount Int                @default(0)
+  status       SubmissionStatus @default(PENDING)
+  totalRecords Int              @default(1)
+  successCount Int              @default(0)
+  failureCount Int              @default(0)
 
   validationStatus ValidationStatus @default(PENDING)
   validationErrors Json?
@@ -363,9 +280,8 @@ model Submission {
   ingestTime DateTime  @default(now())
   enrichedAt DateTime?
 
-  batchItems BatchSubmissionItem[]
-
-  // Future
+  batchItems        BatchSubmissionItem[]
+  kpiRecord         KpiRecord?
   queueItem         QueueItem?
   fraunhoferRequest FraunhoferRequest?
 
@@ -379,10 +295,8 @@ model Submission {
   @@index([sourceTag])
 }
 
-// Individual items in a batch submission
 model BatchSubmissionItem {
-  id String @id @default(cuid())
-
+  id           String     @id @default(cuid())
   submissionId String
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
@@ -390,9 +304,8 @@ model BatchSubmissionItem {
   externalId String?
   resourceId String?
 
-  status SubmissionStatus
-  errors Json?
-
+  status      SubmissionStatus
+  errors      Json?
   itemPayload Json
 
   createdAt DateTime @default(now())
@@ -401,12 +314,12 @@ model BatchSubmissionItem {
   @@index([submissionId])
 }
 
-// Phase 2+: Additional Connectors
+// =============================================================================
+// Connector 2: Fraunhofer Integration
+// =============================================================================
 
-// Connector 2: Fraunhofer queue
 model QueueItem {
-  id String @id @default(cuid())
-
+  id           String     @id @default(cuid())
   submissionId String     @unique
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
@@ -435,8 +348,7 @@ model QueueItem {
 }
 
 model FraunhoferRequest {
-  id String @id @default(cuid())
-
+  id           String     @id @default(cuid())
   submissionId String     @unique
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
@@ -452,9 +364,9 @@ model FraunhoferRequest {
   maxAttempts   Int       @default(3)
   lastAttemptAt DateTime?
 
-  callbackId       String?   @unique
-  callbackReceived Boolean   @default(false)
-  pollCount        Int       @default(0)
+  callbackId       String?  @unique
+  callbackReceived Boolean  @default(false)
+  pollCount        Int      @default(0)
   lastPolledAt     DateTime?
 
   computedAt DateTime?
@@ -467,11 +379,13 @@ model FraunhoferRequest {
   @@index([callbackId])
 }
 
-// Connector 3: Trust layer signing
-model SigningRequest {
-  id String @id @default(cuid())
+// =============================================================================
+// Connector 3: Trust Layer Signing
+// =============================================================================
 
-  buildingId String
+model SigningRequest {
+  id      String @id @default(cuid())
+  assetId String
 
   status         SigningStatus @default(PENDING)
   requestPayload Json?
@@ -485,22 +399,33 @@ model SigningRequest {
   lastAttemptAt DateTime?
   lastError     String?
 
+  idempotencyKey   String? @unique
+  requestDuration  Int?
+  responseDuration Int?
+
+  kpiVersion String?
+  userId     String?
+  systemId   String?
+
+  consentGiven     Boolean   @default(false)
+  consentTimestamp DateTime?
+
   signedDocument   SignedDocument? @relation(fields: [signedDocumentId], references: [id])
   signedDocumentId String?         @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([buildingId])
+  @@index([assetId])
   @@index([status])
   @@index([trustLayerRequestId])
+  @@index([idempotencyKey])
 }
 
 model SignedDocument {
-  id String @id @default(cuid())
-
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   filename    String
   contentType String @default("application/pdf")
@@ -526,15 +451,17 @@ model SignedDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([buildingId])
+  @@index([assetId])
   @@index([signedAt])
   @@index([expiresAt])
 }
 
-// Connector 4: Document distribution
-model DocumentAccessGrant {
-  id String @id @default(cuid())
+// =============================================================================
+// Connector 4: Document Distribution
+// =============================================================================
 
+model DocumentAccessGrant {
+  id         String         @id @default(cuid())
   documentId String
   document   SignedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -563,8 +490,7 @@ model DocumentAccessGrant {
 }
 
 model DocumentAccessLog {
-  id String @id @default(cuid())
-
+  id         String         @id @default(cuid())
   documentId String
   document   SignedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -590,45 +516,18 @@ model DocumentAccessLog {
   @@index([action, createdAt])
 }
 
-// Other utilities
-
-model DataVersion {
-  id String @id @default(cuid())
-
-  entityType String
-  entityId   String
-
-  version      Int   @default(1)
-  previousData Json?
-  currentData  Json
-
-  changeType    ChangeType
-  changedFields String[]
-
-  organizationId String?
-  userId         String?
-  submissionId   String?
-
-  mergeSource    String?
-  mergeConflicts Json?
-
-  createdAt DateTime @default(now())
-
-  @@index([entityType, entityId])
-  @@index([entityType, entityId, version])
-  @@index([submissionId])
-}
+// =============================================================================
+// Utilities
+// =============================================================================
 
 model WebhookConfig {
-  id String @id @default(cuid())
-
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  name   String
-  url    String
-  secret String?
-
+  name     String
+  url      String
+  secret   String?
   events   String[]
   isActive Boolean  @default(true)
 
@@ -644,11 +543,10 @@ model WebhookConfig {
 }
 
 model PartnerRequest {
-  id String @id @default(cuid())
-
+  id           String  @id @default(cuid())
   companyName  String
   contactName  String
-  contactEmail String @unique
+  contactEmail String  @unique
   website      String?
 
   integrationType String
@@ -671,44 +569,9 @@ model PartnerRequest {
   @@index([contactEmail])
 }
 
-// KPI definitions for validation
-model KpiDefinition {
-  id String @id @default(cuid())
-
-  kpiKey    String @unique
-  kpiNumber String
-
-  targetModel String
-  targetField String
-
-  dataType   KpiDataType
-  enumValues String[]
-  required   Boolean     @default(false)
-  minValue   Float?
-  maxValue   Float?
-  format     String?
-
-  nameEn String
-  nameDe String
-  unit   String?
-  domain String
-  list   KpiList
-
-  version      Int       @default(1)
-  isActive     Boolean   @default(true)
-  deprecatedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([kpiKey, isActive])
-  @@index([list, isActive])
-  @@index([targetModel])
-}
-
-// ===========================================
+// =============================================================================
 // Enums
-// ===========================================
+// =============================================================================
 
 enum OrgType {
   ACCREDITED_PARTNER
@@ -717,8 +580,10 @@ enum OrgType {
 }
 
 enum OrgStatus {
+  PENDING
   ACTIVE
   SUSPENDED
+  INACTIVE
   REVOKED
 }
 
@@ -768,9 +633,9 @@ enum AuditAction {
   API_TOKEN_CREATED
   API_TOKEN_USED
   API_TOKEN_REVOKED
-  BUILDING_CREATED
-  BUILDING_UPDATED
-  BUILDING_DELETED
+  ASSET_CREATED
+  ASSET_UPDATED
+  ASSET_DELETED
   KPI_SUBMITTED
   KPI_UPDATED
   KPI_MERGED
@@ -781,9 +646,6 @@ enum AuditAction {
   BATCH_COMPLETED
   VALIDATION_PASSED
   VALIDATION_FAILED
-  DATA_ENRICHED
-  DATA_MERGED
-  DATA_VERSIONED
   QUEUE_ITEM_CREATED
   QUEUE_ITEM_COMPLETED
   QUEUE_ITEM_FAILED
@@ -805,71 +667,12 @@ enum AuditAction {
   PARTNER_REQUEST_REJECTED
   WEBHOOK_TRIGGERED
   WEBHOOK_FAILED
-}
-
-enum BuildingUseType {
-  RESIDENTIAL
-  RETAIL
-  OFFICE
-  HOTEL_ACCOMMODATION_GASTRONOMY
-  HEALTHCARE_SOCIAL
-  INDUSTRIAL_LOGISTICS
-  INFRASTRUCTURE
-  RECREATION_CULTURE_EDUCATION
-  MIXED_USE
-  OTHER
-}
-
-enum BuildingCategory {
-  RESIDENTIAL
-  NON_RESIDENTIAL
-}
-
-enum ActivityInValueChain {
-  CONSTRUCTION
-  EXISTING_BUILDING
-  RENOVATION
-  DEMOLITION
-}
-
-enum TaxonomyAlignment {
-  YES_CA
-  YES_CE
-  YES_CM
-  NO
-}
-
-enum FossilFuelsBasis {
-  BY_NET_BASE_RENT
-  BY_REAL_ESTATE_VALUE
-}
-
-enum RenovationType {
-  MORE_THAN_25_PERCENT_ENVELOPE_RENOVATED
-  AT_LEAST_30_PERCENT_ENERGY_REDUCTION
-  MORE_THAN_25_PERCENT_COST_OF_VALUE
-  OTHER
-}
-
-enum EPCType {
-  CONSUMPTION_BASED
-  DEMAND_BASED
-  NO_OBLIGATION
-  NON_EXISTENT
-}
-
-enum HeatingMedium {
-  DISTRICT_HEATING
-  GAS
-  OIL
-  ELECTRICITY
-  HEAT_PUMP
-  HYBRID
-}
-
-enum GHGMethodology {
-  MARKET_BASED
-  LOCATION_BASED
+  ORG_CREATED
+  ORG_UPDATED
+  ORG_ACTIVATED
+  ORG_DELETED
+  API_CREDENTIALS_CREATED
+  API_CREDENTIALS_ROTATED
 }
 
 enum QueueStatus {
@@ -878,13 +681,6 @@ enum QueueStatus {
   COMPLETED
   FAILED
   DEAD_LETTER
-}
-
-enum ChangeType {
-  CREATED
-  UPDATED
-  MERGED
-  ROLLBACK
 }
 
 enum FraunhoferStatus {
@@ -920,18 +716,4 @@ enum PartnerRequestStatus {
   APPROVED
   REJECTED
   REVOKED
-}
-
-enum KpiDataType {
-  DATE
-  INTEGER
-  FLOAT
-  STRING
-  ENUM
-  BOOLEAN
-}
-
-enum KpiList {
-  BASIC
-  EXTENDED
 }
