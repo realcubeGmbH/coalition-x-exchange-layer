@@ -4,7 +4,7 @@
  */
 
 import { randomBytes, createHash } from "crypto";
-import { authConfig } from "./config";
+import { authConfig, TOKEN_SCOPES } from "./config";
 import type { TokenScope } from "./config";
 import prisma from "../prisma";
 import {
@@ -12,6 +12,20 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
 } from "./jwt";
+
+/**
+ * Type predicate to check if a string is a valid TokenScope
+ */
+function isTokenScope(value: string): value is TokenScope {
+  return value in TOKEN_SCOPES;
+}
+
+/**
+ * Filter an array of strings to only include valid TokenScope values
+ */
+function filterValidScopes(scopes: string[]): TokenScope[] {
+  return scopes.filter(isTokenScope);
+}
 
 /**
  * Generate a secure random API key
@@ -36,11 +50,11 @@ export function generateTokenId(): string {
 }
 
 /**
- * Create a new token pair (access + refresh) for a user
+ * Create a new token pair (access + refresh) for a user or organization
  */
 export async function createTokenPair(params: {
   userId: string;
-  organizationId: string;
+  organizationId: string | null; // Null for SYSTEM_ADMIN
   role: string;
   scopes: TokenScope[];
   name?: string;
@@ -57,6 +71,12 @@ export async function createTokenPair(params: {
   const accessExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
   const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
+  // Check if this is an org-level token (API key exchange, no real user)
+  const isOrgLevelToken = params.userId.startsWith("org:");
+  
+  // Check if this is a system admin (no organization)
+  const isSystemAdmin = params.role === "SYSTEM_ADMIN";
+
   // Generate tokens
   const accessToken = await generateAccessToken({
     userId: params.userId,
@@ -69,24 +89,30 @@ export async function createTokenPair(params: {
     userId: params.userId,
     organizationId: params.organizationId,
     tokenId,
+    role: params.role,
   });
 
-  // Store token record in database
-  await prisma.apiToken.create({
-    data: {
-      id: tokenId,
-      token: accessToken.slice(-16), // Store partial for identification
-      tokenHash: hashToken(accessToken),
-      organizationId: params.organizationId,
-      userId: params.userId,
-      name: params.name,
-      scopes: params.scopes,
-      expiresAt: accessExpiresAt,
-      refreshToken: hashToken(refreshToken),
-      refreshExpiresAt,
-      lastUsedIp: params.ipAddress,
-    },
-  });
+  // System admins don't need ApiToken records stored with org
+  // (they operate above the tenant layer)
+  if (!isSystemAdmin && params.organizationId) {
+    // Store token record in database
+    // For org-level tokens, userId is null (no actual user)
+    await prisma.apiToken.create({
+      data: {
+        id: tokenId,
+        token: accessToken.slice(-16), // Store partial for identification
+        tokenHash: hashToken(accessToken),
+        organizationId: params.organizationId,
+        userId: isOrgLevelToken ? null : params.userId,
+        name: params.name || (isOrgLevelToken ? "API Key Token" : undefined),
+        scopes: params.scopes,
+        expiresAt: accessExpiresAt,
+        refreshToken: hashToken(refreshToken),
+        refreshExpiresAt,
+        lastUsedIp: params.ipAddress,
+      },
+    });
+  }
 
   return {
     accessToken,
@@ -139,11 +165,13 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 
   // Generate new access token
   const accessExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  const isOrgLevelToken = payload.sub.startsWith("org:");
+  const validScopes = filterValidScopes(tokenRecord.scopes);
   const accessToken = await generateAccessToken({
     userId: payload.sub,
     organizationId: payload.orgId,
-    role: tokenRecord.user?.role || "CLIENT_USER",
-    scopes: tokenRecord.scopes as TokenScope[],
+    role: isOrgLevelToken ? "PARTNER_API" : (tokenRecord.user?.role || "CLIENT_USER"),
+    scopes: validScopes,
   });
 
   // Update token record

@@ -4,6 +4,7 @@
 
 export * from "./config";
 export * from "./jwt";
+export * from "./oauth";
 export * from "./password";
 export * from "./tokens";
 export * from "./session";

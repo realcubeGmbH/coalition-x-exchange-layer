@@ -10,7 +10,8 @@
     "db:generate": "prisma generate --config prisma/prisma.config.ts",
     "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
     "db:reset": "prisma migrate reset --config prisma/prisma.config.ts",
-    "db:studio": "prisma studio --config prisma/prisma.config.ts"
+    "db:studio": "prisma studio --config prisma/prisma.config.ts",
+    "bootstrap": "npx tsx prisma/bootstrap.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
@@ -19,7 +20,8 @@
     "next": "^16.0.10",
     "prisma": "^6.9.0",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

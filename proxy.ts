@@ -11,10 +11,10 @@ const publicRoutes = [
   "/",
   "/login",
   "/register",
-  "/api/auth/login",
-  "/api/auth/register",
-  "/api/auth/refresh",
-  "/api/auth/token", // API key → OAuth exchange
+  "/api/auth/login", // User login (admin, clients)
+  "/api/auth/register", // User registration (clients)
+  "/api/auth/token", // OAuth 2.0 token endpoint (all grants)
+  "/api/partner-requests", // Partner application
   "/api/health",
 ];
 
@@ -72,7 +72,7 @@ async function handleApiAuth(request: NextRequest): Promise<NextResponse> {
   // Inject auth context into headers for route handlers
   const headers = new Headers(request.headers);
   headers.set("x-user-id", payload.sub);
-  headers.set("x-org-id", payload.orgId);
+  headers.set("x-org-id", payload.orgId ?? "");
   headers.set("x-user-role", payload.role);
   headers.set("x-user-scopes", payload.scopes.join(","));
 
@@ -101,7 +101,7 @@ async function handlePageAuth(request: NextRequest): Promise<NextResponse> {
 
   const headers = new Headers(request.headers);
   headers.set("x-user-id", payload.sub);
-  headers.set("x-org-id", payload.orgId);
+  headers.set("x-org-id", payload.orgId ?? "");
   headers.set("x-user-role", payload.role);
 
   return NextResponse.next({ request: { headers } });

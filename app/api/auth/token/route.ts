@@ -1,163 +1,136 @@
 /**
- * POST /api/auth/token
- * Exchange API key for OAuth access token (Partner API flow)
+ * POST /api/oauth/token
+ * OAuth 2.0 Token Endpoint
  *
- * Flow: Partner sends API key → receives JWT access token + refresh token
+ * Supports:
+ * - client_credentials grant (M2M authentication via client_id + client_secret)
+ * - refresh_token grant (token refresh)
+ * - api_key grant (legacy API key exchange)
+ * - X-API-Key header (backward compatibility for API key exchange)
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import {
-  validateApiKey,
-  createTokenPair,
-  generateApiKey,
-  hashToken,
-} from "@/lib/auth";
+import { oauthService, OAuthError } from "@/lib/services";
+import { OAuthTokenRequestSchema } from "@/lib/domain/oauth";
+import { getClientIp, getUserAgent } from "@/lib/api-auth";
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
 
 /**
- * POST - Exchange API key for access token
+ * OAuth 2.0 Error Response
  */
-export async function POST(request: NextRequest) {
-  try {
-    // Extract API key from header (AC2: Source Validation)
-    const apiKey = request.headers.get("x-api-key");
-
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          error: "unauthorized",
-          message: "Missing X-API-Key header",
-          code: "MISSING_API_KEY",
-        },
-        { status: 401 }
-      );
-    }
-
-    // Validate API key
-    const organization = await validateApiKey(apiKey);
-
-    if (!organization) {
-      // Log failed attempt (AC5: Logging)
-      const ipAddress =
-        request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
-
-      console.warn(`Invalid API key attempt from ${ipAddress}`);
-
-      return NextResponse.json(
-        {
-          error: "unauthorized",
-          message: "Invalid or revoked API key",
-          code: "INVALID_API_KEY",
-        },
-        { status: 401 }
-      );
-    }
-
-    // Check organization type (only ACCREDITED_PARTNER can use API)
-    if (organization.type !== "ACCREDITED_PARTNER") {
-      return NextResponse.json(
-        {
-          error: "forbidden",
-          message: "API access requires Accredited Partner status",
-          code: "NOT_ACCREDITED",
-        },
-        { status: 403 }
-      );
-    }
-
-    // Get scopes for partner API access
-    const scopes: Array<
-      "buildings:read" | "buildings:write" | "kpis:read" | "kpis:write"
-    > = ["buildings:read", "buildings:write", "kpis:read", "kpis:write"];
-
-    const ipAddress =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
-
-    // Generate tokens (no user - organization-level API access)
-    const tokens = await createTokenPair({
-      userId: `org:${organization.id}`, // Special format for org-level tokens
-      organizationId: organization.id,
-      role: "PARTNER_API",
-      scopes,
-      name: "API key exchange",
-      ipAddress,
-    });
-
-    // Log token creation (AC5: Logging)
-    await prisma.auditLog.create({
-      data: {
-        organizationId: organization.id,
-        action: "API_TOKEN_CREATED",
-        resource: "api_token",
-        ipAddress,
-        userAgent: request.headers.get("user-agent"),
-      },
-    });
-
-    return NextResponse.json({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      tokenType: "Bearer",
-      expiresIn: 3600, // 1 hour in seconds
-      expiresAt: tokens.expiresAt.toISOString(),
-      scope: scopes.join(" "),
-    });
-  } catch (error) {
-    console.error("Token exchange error:", error);
-    return NextResponse.json(
-      {
-        error: "internal_error",
-        message: "An unexpected error occurred",
-      },
-      { status: 500 }
-    );
-  }
+function oauthError(
+  error: string,
+  description: string,
+  status: number = 400
+): NextResponse {
+  return NextResponse.json(
+    { error, error_description: description },
+    { status }
+  );
 }
 
 /**
- * Helper endpoint to generate API key for testing (remove in production)
- * POST with { organizationId: string } to generate a key
+ * Parse request body (supports both form-urlencoded and JSON)
  */
-export async function PUT(request: NextRequest) {
-  // Only allow in development
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json(
-      { error: "Not available in production" },
-      { status: 404 }
-    );
+async function parseRequest(request: NextRequest) {
+  const contentType = request.headers.get("content-type") || "";
+
+  let rawData: Record<string, unknown>;
+
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const formData = await request.formData();
+    rawData = {
+      grant_type: formData.get("grant_type") ?? undefined,
+      client_id: formData.get("client_id") ?? undefined,
+      client_secret: formData.get("client_secret") ?? undefined,
+      refresh_token: formData.get("refresh_token") ?? undefined,
+      api_key: formData.get("api_key") ?? undefined,
+      scope: formData.get("scope") ?? undefined,
+    };
+  } else {
+    rawData = await request.json();
   }
 
-  try {
-    const { organizationId } = await request.json();
+  return rawData;
+}
 
-    if (!organizationId) {
-      return NextResponse.json(
-        { error: "organizationId required" },
-        { status: 400 }
-      );
+// =============================================================================
+// Route Handler
+// =============================================================================
+
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = {
+      ipAddress: getClientIp(request),
+      userAgent: getUserAgent(request),
+    };
+
+    // Check for X-API-Key header first (backward compatibility)
+    const apiKeyHeader = request.headers.get("x-api-key");
+    if (apiKeyHeader) {
+      const result = await oauthService.apiKeyGrant(apiKeyHeader, ctx);
+      return NextResponse.json(result);
     }
 
-    const apiKey = generateApiKey();
+    // Parse request body
+    const rawData = await parseRequest(request);
 
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        apiKey: apiKey.slice(-8), // Store partial for identification
-        apiKeyHash: hashToken(apiKey),
-      },
-    });
+    // Handle api_key grant type
+    if (rawData.grant_type === "api_key") {
+      const apiKey = rawData.api_key as string | undefined;
+      if (!apiKey) {
+        return oauthError("invalid_request", "api_key is required for api_key grant");
+      }
+      const result = await oauthService.apiKeyGrant(apiKey, ctx);
+      return NextResponse.json(result);
+    }
 
-    return NextResponse.json({
-      apiKey,
-      message: "Store this key securely - it cannot be retrieved again",
-    });
-  } catch (error) {
-    console.error("API key generation error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate API key" },
-      { status: 500 }
+    // Validate standard OAuth request format
+    const parseResult = OAuthTokenRequestSchema.safeParse(rawData);
+    if (!parseResult.success) {
+      return oauthError("invalid_request", "Invalid request format or missing grant_type");
+    }
+
+    const { grant_type, client_id, client_secret, refresh_token, scope } = parseResult.data;
+
+    // Handle refresh_token grant
+    if (grant_type === "refresh_token") {
+      if (!refresh_token) {
+        return oauthError("invalid_request", "refresh_token is required");
+      }
+
+      const result = await oauthService.refreshTokenGrant(refresh_token);
+      return NextResponse.json(result);
+    }
+
+    // Handle client_credentials grant
+    if (grant_type === "client_credentials") {
+      if (!client_id || !client_secret) {
+        return oauthError("invalid_request", "client_id and client_secret are required");
+      }
+
+      const result = await oauthService.clientCredentialsGrant(
+        client_id,
+        client_secret,
+        scope,
+        ctx
+      );
+      return NextResponse.json(result);
+    }
+
+    return oauthError(
+      "unsupported_grant_type",
+      "Supported grant types: client_credentials, refresh_token, api_key"
     );
+  } catch (error) {
+    if (error instanceof OAuthError) {
+      return NextResponse.json(error.toResponse(), { status: error.statusCode });
+    }
+
+    console.error("OAuth token error:", error);
+    return oauthError("server_error", "An unexpected error occurred", 500);
   }
 }

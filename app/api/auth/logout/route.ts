@@ -1,11 +1,15 @@
 /**
- * POST /api/auth/logout
- * Logout and invalidate session
+ * POST /api/oauth/logout
+ * OAuth 2.0 Logout
+ *
+ * Logs out user and clears session cookie.
+ * For token revocation, use POST /api/oauth/revoke instead.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { oauthService } from "@/lib/services";
 import { verifyAccessToken } from "@/lib/auth";
+import { getClientIp, getUserAgent } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,20 +23,14 @@ export async function POST(request: NextRequest) {
       const payload = await verifyAccessToken(token);
 
       if (payload) {
-        // Log logout (AC5: Logging)
-        await prisma.auditLog.create({
-          data: {
-            organizationId: payload.orgId,
-            userId: payload.sub.startsWith("org:") ? undefined : payload.sub,
-            action: "AUTH_LOGOUT",
-            resource: "user",
-            resourceId: payload.sub,
-            ipAddress:
-              request.headers.get("x-forwarded-for")?.split(",")[0] ||
-              "unknown",
-            userAgent: request.headers.get("user-agent"),
-          },
-        });
+        await oauthService.logout(
+          payload.sub.startsWith("org:") ? null : payload.sub,
+          payload.orgId,
+          {
+            ipAddress: getClientIp(request),
+            userAgent: getUserAgent(request),
+          }
+        );
       }
     }
 

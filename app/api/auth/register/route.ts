@@ -1,168 +1,42 @@
 /**
- * POST /api/auth/register
- * User registration endpoint
+ * POST /api/oauth/register
+ * OAuth 2.0 User Registration
+ *
+ * Registers a new user and organization, returns OAuth tokens.
+ * Sets session cookie for web UI access.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
-import {
-  hashPassword,
-  validatePasswordStrength,
-  createTokenPair,
-} from "@/lib/auth";
-
-interface RegisterRequest {
-  email: string;
-  password: string;
-  name: string;
-  organizationName?: string;
-}
+import { oauthService, OAuthError } from "@/lib/services";
+import { RegisterSchema } from "@/lib/domain/auth";
+import { getClientIp, getUserAgent } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const body: RegisterRequest = await request.json();
-    const { email, password, name, organizationName } = body;
+    const body = await request.json();
+    const dto = RegisterSchema.parse(body);
 
-    // Validate required fields
-    if (!email || !password || !name) {
-      return NextResponse.json(
-        {
-          error: "validation_error",
-          message: "Missing required fields",
-          details: {
-            email: !email ? "Email is required" : null,
-            password: !password ? "Password is required" : null,
-            name: !name ? "Name is required" : null,
-          },
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        {
-          error: "validation_error",
-          message: "Invalid email format",
-          code: "INVALID_EMAIL",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate password strength
-    const passwordValidation = validatePasswordStrength(password);
-    if (!passwordValidation.valid) {
-      return NextResponse.json(
-        {
-          error: "validation_error",
-          message: "Password does not meet requirements",
-          details: passwordValidation.errors,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if user already exists (AC1: Duplicate Detection → 409)
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+    const result = await oauthService.register(dto, {
+      ipAddress: getClientIp(request),
+      userAgent: getUserAgent(request),
     });
 
-    if (existingUser) {
-      return NextResponse.json(
-        {
-          error: "conflict",
-          message: "User with this email already exists",
-          code: "USER_EXISTS",
-        },
-        { status: 409 }
-      );
-    }
-
-    // Hash password
-    const passwordHash = await hashPassword(password);
-
-    // Create organization and user in transaction
-    const result = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        // Create organization (CLIENT type for self-registration)
-        const organization = await tx.organization.create({
-          data: {
-            name: organizationName || `${name}'s Organization`,
-            type: "CLIENT",
-            status: "ACTIVE",
-          },
-        });
-
-        // Create user
-        const user = await tx.user.create({
-          data: {
-            email: email.toLowerCase(),
-            name,
-            passwordHash,
-            role: "CLIENT_ADMIN", // First user is admin
-            organizationId: organization.id,
-          },
-        });
-
-        return { user, organization };
-      }
-    );
-
-    // Generate tokens
-    const ipAddress =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
-
-    const tokens = await createTokenPair({
-      userId: result.user.id,
-      organizationId: result.organization.id,
-      role: result.user.role,
-      scopes: ["buildings:read", "buildings:write", "kpis:read", "kpis:write"],
-      name: "Initial login",
-      ipAddress,
-    });
-
-    // Log registration (AC5: Logging)
-    await prisma.auditLog.create({
-      data: {
-        organizationId: result.organization.id,
-        userId: result.user.id,
-        action: "AUTH_LOGIN",
-        resource: "user",
-        resourceId: result.user.id,
-        ipAddress,
-        userAgent: request.headers.get("user-agent"),
-      },
-    });
-
-    // Return success response
+    // Create response with OAuth-style token response
     const response = NextResponse.json(
       {
-        message: "Registration successful",
-        user: {
-          id: result.user.id,
-          email: result.user.email,
-          name: result.user.name,
-          role: result.user.role,
-        },
-        organization: {
-          id: result.organization.id,
-          name: result.organization.name,
-        },
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt.toISOString(),
+        access_token: result.accessToken,
+        refresh_token: result.refreshToken,
+        token_type: "Bearer",
+        expires_in: 3600,
+        expires_at: result.expiresAt,
+        user: result.user,
+        organization: result.organization,
       },
       { status: 201 }
     );
 
     // Set session cookie for web UI
-    response.cookies.set("session", tokens.accessToken, {
+    response.cookies.set("session", result.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -172,12 +46,21 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Registration error:", error);
+    if (error instanceof OAuthError) {
+      return NextResponse.json(error.toResponse(), { status: error.statusCode });
+    }
+
+    // Handle Zod validation errors
+    if (error instanceof Error && error.name === "ZodError") {
+      return NextResponse.json(
+        { error: "invalid_request", error_description: "Invalid request format" },
+        { status: 400 }
+      );
+    }
+
+    console.error("OAuth register error:", error);
     return NextResponse.json(
-      {
-        error: "internal_error",
-        message: "An unexpected error occurred",
-      },
+      { error: "server_error", error_description: "An unexpected error occurred" },
       { status: 500 }
     );
   }

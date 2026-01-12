@@ -5,7 +5,7 @@ CREATE TYPE "OrgType" AS ENUM ('ACCREDITED_PARTNER', 'CLIENT', 'ADMIN');
 CREATE TYPE "OrgStatus" AS ENUM ('PENDING', 'ACTIVE', 'SUSPENDED', 'INACTIVE', 'REVOKED');
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'PARTNER_ADMIN', 'PARTNER_USER', 'CLIENT_ADMIN', 'CLIENT_USER');
+CREATE TYPE "UserRole" AS ENUM ('SYSTEM_ADMIN', 'PARTNER_ADMIN', 'PARTNER_USER', 'CLIENT_ADMIN', 'CLIENT_USER');
 
 -- CreateEnum
 CREATE TYPE "DataSource" AS ENUM ('MANUAL', 'API', 'BULK_UPLOAD');
@@ -44,7 +44,7 @@ CREATE TYPE "AccessAction" AS ENUM ('STATUS_CHECK', 'DOWNLOAD', 'VERIFY');
 CREATE TYPE "PartnerRequestStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'REVOKED');
 
 -- CreateTable
-CREATE TABLE "Organization" (
+CREATE TABLE "organizations" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "type" "OrgType" NOT NULL,
@@ -56,11 +56,11 @@ CREATE TABLE "Organization" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Organization_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "organizations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Asset" (
+CREATE TABLE "assets" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "externalId" TEXT,
@@ -73,11 +73,11 @@ CREATE TABLE "Asset" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Asset_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "assets_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "SchemaRegistry" (
+CREATE TABLE "schema_registries" (
     "id" TEXT NOT NULL,
     "version" TEXT NOT NULL,
     "name" TEXT,
@@ -90,11 +90,11 @@ CREATE TABLE "SchemaRegistry" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "SchemaRegistry_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "schema_registries_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "ValidationRule" (
+CREATE TABLE "validation_rules" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "version" INTEGER NOT NULL DEFAULT 1,
@@ -108,11 +108,11 @@ CREATE TABLE "ValidationRule" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "ValidationRule_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "validation_rules_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "KpiRecord" (
+CREATE TABLE "kpi_records" (
     "id" TEXT NOT NULL,
     "assetId" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
@@ -127,26 +127,26 @@ CREATE TABLE "KpiRecord" (
     "source" "DataSource" NOT NULL DEFAULT 'API',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "KpiRecord_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "kpi_records_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "User" (
+CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "role" "UserRole" NOT NULL,
     "passwordHash" TEXT NOT NULL,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
-    "organizationId" TEXT NOT NULL,
+    "organizationId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "ApiToken" (
+CREATE TABLE "api_tokens" (
     "id" TEXT NOT NULL,
     "token" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
@@ -165,13 +165,13 @@ CREATE TABLE "ApiToken" (
     "revokedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "ApiToken_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "api_tokens_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "AuditLog" (
+CREATE TABLE "audit_logs" (
     "id" TEXT NOT NULL,
-    "organizationId" TEXT NOT NULL,
+    "organizationId" TEXT,
     "userId" TEXT,
     "action" "AuditAction" NOT NULL,
     "resource" TEXT NOT NULL,
@@ -187,11 +187,11 @@ CREATE TABLE "AuditLog" (
     "schemaVersion" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Submission" (
+CREATE TABLE "submissions" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "userId" TEXT,
@@ -218,11 +218,11 @@ CREATE TABLE "Submission" (
     "submittedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "completedAt" TIMESTAMP(3),
 
-    CONSTRAINT "Submission_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "submissions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "BatchSubmissionItem" (
+CREATE TABLE "batch_submission_items" (
     "id" TEXT NOT NULL,
     "submissionId" TEXT NOT NULL,
     "itemIndex" INTEGER NOT NULL,
@@ -233,11 +233,11 @@ CREATE TABLE "BatchSubmissionItem" (
     "itemPayload" JSONB NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "BatchSubmissionItem_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "batch_submission_items_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "QueueItem" (
+CREATE TABLE "queue_items" (
     "id" TEXT NOT NULL,
     "submissionId" TEXT NOT NULL,
     "queueName" TEXT NOT NULL DEFAULT 'fraunhofer',
@@ -255,11 +255,11 @@ CREATE TABLE "QueueItem" (
     "deadLetterAt" TIMESTAMP(3),
     "deadLetterReason" TEXT,
 
-    CONSTRAINT "QueueItem_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "queue_items_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "FraunhoferRequest" (
+CREATE TABLE "fraunhofer_requests" (
     "id" TEXT NOT NULL,
     "submissionId" TEXT NOT NULL,
     "status" "FraunhoferStatus" NOT NULL DEFAULT 'PENDING',
@@ -280,11 +280,11 @@ CREATE TABLE "FraunhoferRequest" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "FraunhoferRequest_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "fraunhofer_requests_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "SigningRequest" (
+CREATE TABLE "signing_requests" (
     "id" TEXT NOT NULL,
     "assetId" TEXT NOT NULL,
     "status" "SigningStatus" NOT NULL DEFAULT 'PENDING',
@@ -308,11 +308,11 @@ CREATE TABLE "SigningRequest" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "SigningRequest_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "signing_requests_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "SignedDocument" (
+CREATE TABLE "signed_documents" (
     "id" TEXT NOT NULL,
     "assetId" TEXT NOT NULL,
     "filename" TEXT NOT NULL,
@@ -331,11 +331,11 @@ CREATE TABLE "SignedDocument" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "SignedDocument_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "signed_documents_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "DocumentAccessGrant" (
+CREATE TABLE "document_access_grants" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
     "granteeType" "GranteeType" NOT NULL,
@@ -352,11 +352,11 @@ CREATE TABLE "DocumentAccessGrant" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "DocumentAccessGrant_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "document_access_grants_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "DocumentAccessLog" (
+CREATE TABLE "document_access_logs" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
     "accessorType" "GranteeType" NOT NULL,
@@ -372,11 +372,11 @@ CREATE TABLE "DocumentAccessLog" (
     "verificationResult" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "DocumentAccessLog_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "document_access_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "WebhookConfig" (
+CREATE TABLE "webhook_configs" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -390,11 +390,11 @@ CREATE TABLE "WebhookConfig" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "WebhookConfig_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "webhook_configs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "PartnerRequest" (
+CREATE TABLE "partner_requests" (
     "id" TEXT NOT NULL,
     "companyName" TEXT NOT NULL,
     "contactName" TEXT NOT NULL,
@@ -412,299 +412,257 @@ CREATE TABLE "PartnerRequest" (
     "reviewedAt" TIMESTAMP(3),
     "approvedAt" TIMESTAMP(3),
 
-    CONSTRAINT "PartnerRequest_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "partner_requests_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Organization_clientId_key" ON "Organization"("clientId");
+CREATE UNIQUE INDEX "organizations_clientId_key" ON "organizations"("clientId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Organization_apiKey_key" ON "Organization"("apiKey");
+CREATE UNIQUE INDEX "organizations_apiKey_key" ON "organizations"("apiKey");
 
 -- CreateIndex
-CREATE INDEX "Organization_clientId_idx" ON "Organization"("clientId");
+CREATE INDEX "organizations_status_idx" ON "organizations"("status");
 
 -- CreateIndex
-CREATE INDEX "Organization_apiKey_idx" ON "Organization"("apiKey");
+CREATE INDEX "organizations_type_idx" ON "organizations"("type");
 
 -- CreateIndex
-CREATE INDEX "Organization_status_idx" ON "Organization"("status");
+CREATE INDEX "assets_organizationId_idx" ON "assets"("organizationId");
 
 -- CreateIndex
-CREATE INDEX "Organization_type_idx" ON "Organization"("type");
+CREATE INDEX "assets_name_idx" ON "assets"("name");
 
 -- CreateIndex
-CREATE INDEX "Asset_organizationId_idx" ON "Asset"("organizationId");
+CREATE UNIQUE INDEX "assets_organizationId_externalId_key" ON "assets"("organizationId", "externalId");
 
 -- CreateIndex
-CREATE INDEX "Asset_name_idx" ON "Asset"("name");
+CREATE UNIQUE INDEX "schema_registries_version_key" ON "schema_registries"("version");
 
 -- CreateIndex
-CREATE INDEX "Asset_externalId_idx" ON "Asset"("externalId");
+CREATE INDEX "schema_registries_checksum_idx" ON "schema_registries"("checksum");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Asset_organizationId_externalId_key" ON "Asset"("organizationId", "externalId");
+CREATE INDEX "validation_rules_name_isActive_idx" ON "validation_rules"("name", "isActive");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SchemaRegistry_version_key" ON "SchemaRegistry"("version");
+CREATE UNIQUE INDEX "validation_rules_name_version_key" ON "validation_rules"("name", "version");
 
 -- CreateIndex
-CREATE INDEX "SchemaRegistry_version_idx" ON "SchemaRegistry"("version");
+CREATE UNIQUE INDEX "kpi_records_submissionId_key" ON "kpi_records"("submissionId");
 
 -- CreateIndex
-CREATE INDEX "SchemaRegistry_checksum_idx" ON "SchemaRegistry"("checksum");
+CREATE INDEX "kpi_records_assetId_createdAt_idx" ON "kpi_records"("assetId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "ValidationRule_isActive_idx" ON "ValidationRule"("isActive");
+CREATE INDEX "kpi_records_organizationId_createdAt_idx" ON "kpi_records"("organizationId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "ValidationRule_name_isActive_idx" ON "ValidationRule"("name", "isActive");
+CREATE INDEX "kpi_records_schemaVersionId_idx" ON "kpi_records"("schemaVersionId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ValidationRule_name_version_key" ON "ValidationRule"("name", "version");
+CREATE INDEX "kpi_records_validationStatus_idx" ON "kpi_records"("validationStatus");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "KpiRecord_submissionId_key" ON "KpiRecord"("submissionId");
+CREATE INDEX "kpi_records_checksum_idx" ON "kpi_records"("checksum");
 
 -- CreateIndex
-CREATE INDEX "KpiRecord_assetId_createdAt_idx" ON "KpiRecord"("assetId", "createdAt");
+CREATE UNIQUE INDEX "kpi_records_assetId_dataVersion_key" ON "kpi_records"("assetId", "dataVersion");
 
 -- CreateIndex
-CREATE INDEX "KpiRecord_organizationId_createdAt_idx" ON "KpiRecord"("organizationId", "createdAt");
+CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
-CREATE INDEX "KpiRecord_schemaVersionId_idx" ON "KpiRecord"("schemaVersionId");
+CREATE INDEX "users_organizationId_idx" ON "users"("organizationId");
 
 -- CreateIndex
-CREATE INDEX "KpiRecord_validationStatus_idx" ON "KpiRecord"("validationStatus");
+CREATE UNIQUE INDEX "api_tokens_token_key" ON "api_tokens"("token");
 
 -- CreateIndex
-CREATE INDEX "KpiRecord_checksum_idx" ON "KpiRecord"("checksum");
+CREATE UNIQUE INDEX "api_tokens_refreshToken_key" ON "api_tokens"("refreshToken");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "KpiRecord_assetId_dataVersion_key" ON "KpiRecord"("assetId", "dataVersion");
+CREATE INDEX "api_tokens_organizationId_idx" ON "api_tokens"("organizationId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+CREATE INDEX "api_tokens_expiresAt_idx" ON "api_tokens"("expiresAt");
 
 -- CreateIndex
-CREATE INDEX "User_organizationId_idx" ON "User"("organizationId");
+CREATE INDEX "api_tokens_revoked_idx" ON "api_tokens"("revoked");
 
 -- CreateIndex
-CREATE INDEX "User_email_idx" ON "User"("email");
+CREATE INDEX "audit_logs_organizationId_createdAt_idx" ON "audit_logs"("organizationId", "createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ApiToken_token_key" ON "ApiToken"("token");
+CREATE INDEX "audit_logs_userId_createdAt_idx" ON "audit_logs"("userId", "createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ApiToken_refreshToken_key" ON "ApiToken"("refreshToken");
+CREATE INDEX "audit_logs_action_createdAt_idx" ON "audit_logs"("action", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "ApiToken_token_idx" ON "ApiToken"("token");
+CREATE INDEX "audit_logs_resource_resourceId_idx" ON "audit_logs"("resource", "resourceId");
 
 -- CreateIndex
-CREATE INDEX "ApiToken_organizationId_idx" ON "ApiToken"("organizationId");
+CREATE UNIQUE INDEX "submissions_idempotencyKey_key" ON "submissions"("idempotencyKey");
 
 -- CreateIndex
-CREATE INDEX "ApiToken_expiresAt_idx" ON "ApiToken"("expiresAt");
+CREATE INDEX "submissions_organizationId_submittedAt_idx" ON "submissions"("organizationId", "submittedAt");
 
 -- CreateIndex
-CREATE INDEX "ApiToken_revoked_idx" ON "ApiToken"("revoked");
+CREATE INDEX "submissions_status_idx" ON "submissions"("status");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_organizationId_createdAt_idx" ON "AuditLog"("organizationId", "createdAt");
+CREATE INDEX "submissions_validationStatus_idx" ON "submissions"("validationStatus");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_userId_createdAt_idx" ON "AuditLog"("userId", "createdAt");
+CREATE INDEX "submissions_sourceTag_idx" ON "submissions"("sourceTag");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_action_createdAt_idx" ON "AuditLog"("action", "createdAt");
+CREATE UNIQUE INDEX "batch_submission_items_submissionId_itemIndex_key" ON "batch_submission_items"("submissionId", "itemIndex");
 
 -- CreateIndex
-CREATE INDEX "AuditLog_resource_resourceId_idx" ON "AuditLog"("resource", "resourceId");
+CREATE UNIQUE INDEX "queue_items_submissionId_key" ON "queue_items"("submissionId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Submission_idempotencyKey_key" ON "Submission"("idempotencyKey");
+CREATE INDEX "queue_items_queueStatus_priority_queuedAt_idx" ON "queue_items"("queueStatus", "priority", "queuedAt");
 
 -- CreateIndex
-CREATE INDEX "Submission_organizationId_submittedAt_idx" ON "Submission"("organizationId", "submittedAt");
+CREATE INDEX "queue_items_queueName_queueStatus_idx" ON "queue_items"("queueName", "queueStatus");
 
 -- CreateIndex
-CREATE INDEX "Submission_status_idx" ON "Submission"("status");
+CREATE INDEX "queue_items_isDeadLetter_idx" ON "queue_items"("isDeadLetter");
 
 -- CreateIndex
-CREATE INDEX "Submission_validationStatus_idx" ON "Submission"("validationStatus");
+CREATE INDEX "queue_items_nextRetryAt_idx" ON "queue_items"("nextRetryAt");
 
 -- CreateIndex
-CREATE INDEX "Submission_idempotencyKey_idx" ON "Submission"("idempotencyKey");
+CREATE UNIQUE INDEX "fraunhofer_requests_submissionId_key" ON "fraunhofer_requests"("submissionId");
 
 -- CreateIndex
-CREATE INDEX "Submission_sourceTag_idx" ON "Submission"("sourceTag");
+CREATE UNIQUE INDEX "fraunhofer_requests_callbackId_key" ON "fraunhofer_requests"("callbackId");
 
 -- CreateIndex
-CREATE INDEX "BatchSubmissionItem_submissionId_idx" ON "BatchSubmissionItem"("submissionId");
+CREATE INDEX "fraunhofer_requests_status_idx" ON "fraunhofer_requests"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "BatchSubmissionItem_submissionId_itemIndex_key" ON "BatchSubmissionItem"("submissionId", "itemIndex");
+CREATE UNIQUE INDEX "signing_requests_trustLayerRequestId_key" ON "signing_requests"("trustLayerRequestId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "QueueItem_submissionId_key" ON "QueueItem"("submissionId");
+CREATE UNIQUE INDEX "signing_requests_idempotencyKey_key" ON "signing_requests"("idempotencyKey");
 
 -- CreateIndex
-CREATE INDEX "QueueItem_queueStatus_priority_queuedAt_idx" ON "QueueItem"("queueStatus", "priority", "queuedAt");
+CREATE UNIQUE INDEX "signing_requests_signedDocumentId_key" ON "signing_requests"("signedDocumentId");
 
 -- CreateIndex
-CREATE INDEX "QueueItem_queueName_queueStatus_idx" ON "QueueItem"("queueName", "queueStatus");
+CREATE INDEX "signing_requests_assetId_idx" ON "signing_requests"("assetId");
 
 -- CreateIndex
-CREATE INDEX "QueueItem_isDeadLetter_idx" ON "QueueItem"("isDeadLetter");
+CREATE INDEX "signing_requests_status_idx" ON "signing_requests"("status");
 
 -- CreateIndex
-CREATE INDEX "QueueItem_nextRetryAt_idx" ON "QueueItem"("nextRetryAt");
+CREATE INDEX "signed_documents_assetId_idx" ON "signed_documents"("assetId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FraunhoferRequest_submissionId_key" ON "FraunhoferRequest"("submissionId");
+CREATE INDEX "signed_documents_signedAt_idx" ON "signed_documents"("signedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FraunhoferRequest_callbackId_key" ON "FraunhoferRequest"("callbackId");
+CREATE INDEX "signed_documents_expiresAt_idx" ON "signed_documents"("expiresAt");
 
 -- CreateIndex
-CREATE INDEX "FraunhoferRequest_status_idx" ON "FraunhoferRequest"("status");
+CREATE INDEX "document_access_grants_granteeType_granteeId_idx" ON "document_access_grants"("granteeType", "granteeId");
 
 -- CreateIndex
-CREATE INDEX "FraunhoferRequest_callbackId_idx" ON "FraunhoferRequest"("callbackId");
+CREATE INDEX "document_access_grants_expiresAt_idx" ON "document_access_grants"("expiresAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SigningRequest_trustLayerRequestId_key" ON "SigningRequest"("trustLayerRequestId");
+CREATE UNIQUE INDEX "document_access_grants_documentId_granteeType_granteeId_key" ON "document_access_grants"("documentId", "granteeType", "granteeId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SigningRequest_idempotencyKey_key" ON "SigningRequest"("idempotencyKey");
+CREATE INDEX "document_access_logs_documentId_createdAt_idx" ON "document_access_logs"("documentId", "createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "SigningRequest_signedDocumentId_key" ON "SigningRequest"("signedDocumentId");
+CREATE INDEX "document_access_logs_accessorType_accessorId_createdAt_idx" ON "document_access_logs"("accessorType", "accessorId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "SigningRequest_assetId_idx" ON "SigningRequest"("assetId");
+CREATE INDEX "document_access_logs_action_createdAt_idx" ON "document_access_logs"("action", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "SigningRequest_status_idx" ON "SigningRequest"("status");
+CREATE INDEX "webhook_configs_organizationId_isActive_idx" ON "webhook_configs"("organizationId", "isActive");
 
 -- CreateIndex
-CREATE INDEX "SigningRequest_trustLayerRequestId_idx" ON "SigningRequest"("trustLayerRequestId");
+CREATE UNIQUE INDEX "webhook_configs_organizationId_name_key" ON "webhook_configs"("organizationId", "name");
 
 -- CreateIndex
-CREATE INDEX "SigningRequest_idempotencyKey_idx" ON "SigningRequest"("idempotencyKey");
+CREATE UNIQUE INDEX "partner_requests_contactEmail_key" ON "partner_requests"("contactEmail");
 
 -- CreateIndex
-CREATE INDEX "SignedDocument_assetId_idx" ON "SignedDocument"("assetId");
+CREATE UNIQUE INDEX "partner_requests_organizationId_key" ON "partner_requests"("organizationId");
 
 -- CreateIndex
-CREATE INDEX "SignedDocument_signedAt_idx" ON "SignedDocument"("signedAt");
-
--- CreateIndex
-CREATE INDEX "SignedDocument_expiresAt_idx" ON "SignedDocument"("expiresAt");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessGrant_granteeType_granteeId_idx" ON "DocumentAccessGrant"("granteeType", "granteeId");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessGrant_documentId_idx" ON "DocumentAccessGrant"("documentId");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessGrant_expiresAt_idx" ON "DocumentAccessGrant"("expiresAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "DocumentAccessGrant_documentId_granteeType_granteeId_key" ON "DocumentAccessGrant"("documentId", "granteeType", "granteeId");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessLog_documentId_createdAt_idx" ON "DocumentAccessLog"("documentId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessLog_accessorType_accessorId_createdAt_idx" ON "DocumentAccessLog"("accessorType", "accessorId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "DocumentAccessLog_action_createdAt_idx" ON "DocumentAccessLog"("action", "createdAt");
-
--- CreateIndex
-CREATE INDEX "WebhookConfig_organizationId_isActive_idx" ON "WebhookConfig"("organizationId", "isActive");
-
--- CreateIndex
-CREATE UNIQUE INDEX "WebhookConfig_organizationId_name_key" ON "WebhookConfig"("organizationId", "name");
-
--- CreateIndex
-CREATE UNIQUE INDEX "PartnerRequest_contactEmail_key" ON "PartnerRequest"("contactEmail");
-
--- CreateIndex
-CREATE UNIQUE INDEX "PartnerRequest_organizationId_key" ON "PartnerRequest"("organizationId");
-
--- CreateIndex
-CREATE INDEX "PartnerRequest_status_idx" ON "PartnerRequest"("status");
-
--- CreateIndex
-CREATE INDEX "PartnerRequest_contactEmail_idx" ON "PartnerRequest"("contactEmail");
+CREATE INDEX "partner_requests_status_idx" ON "partner_requests"("status");
 
 -- AddForeignKey
-ALTER TABLE "Asset" ADD CONSTRAINT "Asset_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "assets" ADD CONSTRAINT "assets_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ValidationRule" ADD CONSTRAINT "ValidationRule_previousVersionId_fkey" FOREIGN KEY ("previousVersionId") REFERENCES "ValidationRule"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "validation_rules" ADD CONSTRAINT "validation_rules_previousVersionId_fkey" FOREIGN KEY ("previousVersionId") REFERENCES "validation_rules"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KpiRecord" ADD CONSTRAINT "KpiRecord_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "kpi_records" ADD CONSTRAINT "kpi_records_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KpiRecord" ADD CONSTRAINT "KpiRecord_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "kpi_records" ADD CONSTRAINT "kpi_records_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KpiRecord" ADD CONSTRAINT "KpiRecord_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "Submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "kpi_records" ADD CONSTRAINT "kpi_records_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "submissions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KpiRecord" ADD CONSTRAINT "KpiRecord_schemaVersionId_fkey" FOREIGN KEY ("schemaVersionId") REFERENCES "SchemaRegistry"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "kpi_records" ADD CONSTRAINT "kpi_records_schemaVersionId_fkey" FOREIGN KEY ("schemaVersionId") REFERENCES "schema_registries"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "User" ADD CONSTRAINT "User_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "users" ADD CONSTRAINT "users_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ApiToken" ADD CONSTRAINT "ApiToken_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "api_tokens" ADD CONSTRAINT "api_tokens_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ApiToken" ADD CONSTRAINT "ApiToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "api_tokens" ADD CONSTRAINT "api_tokens_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Submission" ADD CONSTRAINT "Submission_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Submission" ADD CONSTRAINT "Submission_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "submissions" ADD CONSTRAINT "submissions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "BatchSubmissionItem" ADD CONSTRAINT "BatchSubmissionItem_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "Submission"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "batch_submission_items" ADD CONSTRAINT "batch_submission_items_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "submissions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "QueueItem" ADD CONSTRAINT "QueueItem_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "Submission"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "queue_items" ADD CONSTRAINT "queue_items_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "submissions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "FraunhoferRequest" ADD CONSTRAINT "FraunhoferRequest_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "Submission"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "fraunhofer_requests" ADD CONSTRAINT "fraunhofer_requests_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "submissions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SigningRequest" ADD CONSTRAINT "SigningRequest_signedDocumentId_fkey" FOREIGN KEY ("signedDocumentId") REFERENCES "SignedDocument"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "signing_requests" ADD CONSTRAINT "signing_requests_signedDocumentId_fkey" FOREIGN KEY ("signedDocumentId") REFERENCES "signed_documents"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SignedDocument" ADD CONSTRAINT "SignedDocument_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "signed_documents" ADD CONSTRAINT "signed_documents_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DocumentAccessGrant" ADD CONSTRAINT "DocumentAccessGrant_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "SignedDocument"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "document_access_grants" ADD CONSTRAINT "document_access_grants_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "signed_documents"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DocumentAccessLog" ADD CONSTRAINT "DocumentAccessLog_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "SignedDocument"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "document_access_logs" ADD CONSTRAINT "document_access_logs_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "signed_documents"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "WebhookConfig" ADD CONSTRAINT "WebhookConfig_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "webhook_configs" ADD CONSTRAINT "webhook_configs_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PartnerRequest" ADD CONSTRAINT "PartnerRequest_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "partner_requests" ADD CONSTRAINT "partner_requests_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE SET NULL ON UPDATE CASCADE;

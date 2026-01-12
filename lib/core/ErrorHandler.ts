@@ -39,6 +39,7 @@ export enum ErrorCode {
   ASSET_NOT_FOUND = "ASSET_NOT_FOUND",
   DUPLICATE = "DUPLICATE",
   DUPLICATE_EXTERNAL_ID = "DUPLICATE_EXTERNAL_ID",
+  CONFLICT = "CONFLICT",
 
   // Rate Limiting
   RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
@@ -191,6 +192,10 @@ export class ApiError extends Error {
       `Asset "${assetId}" not found or access denied`,
       404
     );
+  }
+
+  static conflict(message: string): ApiError {
+    return new ApiError(ErrorCode.CONFLICT, message, 409);
   }
 
   static duplicate(resource: string, field?: string): ApiError {

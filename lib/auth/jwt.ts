@@ -4,24 +4,55 @@
  */
 
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
-import { authConfig } from "./config";
+import { z } from "zod";
+import { authConfig, TOKEN_SCOPES } from "./config";
 import type { TokenScope } from "./config";
 
-// JWT Payload structure
-export interface AccessTokenPayload extends JWTPayload {
-  sub: string; // User ID
-  orgId: string; // Organization ID
-  role: string; // User role
-  scopes: TokenScope[];
-  type: "access";
-}
+// =============================================================================
+// Zod Schemas for JWT Payloads
+// =============================================================================
 
-export interface RefreshTokenPayload extends JWTPayload {
-  sub: string; // User ID
-  orgId: string; // Organization ID
-  tokenId: string; // ApiToken ID for revocation
-  type: "refresh";
-}
+const TokenScopeSchema = z.enum(
+  Object.keys(TOKEN_SCOPES) as [TokenScope, ...TokenScope[]]
+);
+
+const AccessTokenPayloadSchema = z.object({
+  sub: z.string(), // User ID
+  orgId: z.string().nullable(), // Organization ID (null for SYSTEM_ADMIN)
+  role: z.string(), // User role
+  scopes: z.array(TokenScopeSchema),
+  type: z.literal("access"),
+  isSystemAdmin: z.boolean().optional(), // True for SYSTEM_ADMIN users
+  // Standard JWT claims (optional, added by jose)
+  iss: z.string().optional(),
+  aud: z.union([z.string(), z.array(z.string())]).optional(),
+  exp: z.number().optional(),
+  iat: z.number().optional(),
+});
+
+const RefreshTokenPayloadSchema = z.object({
+  sub: z.string(), // User ID
+  orgId: z.string().nullable(), // Organization ID (null for SYSTEM_ADMIN)
+  tokenId: z.string(), // ApiToken ID for revocation
+  type: z.literal("refresh"),
+  isSystemAdmin: z.boolean().optional(), // True for SYSTEM_ADMIN users
+  // Standard JWT claims (optional)
+  iss: z.string().optional(),
+  aud: z.union([z.string(), z.array(z.string())]).optional(),
+  exp: z.number().optional(),
+  iat: z.number().optional(),
+});
+
+// =============================================================================
+// Types (derived from Zod schemas)
+// =============================================================================
+
+export type AccessTokenPayload = z.infer<typeof AccessTokenPayloadSchema> & JWTPayload;
+export type RefreshTokenPayload = z.infer<typeof RefreshTokenPayloadSchema> & JWTPayload;
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
 
 /**
  * Get the JWT secret as Uint8Array (required by jose)
@@ -58,24 +89,32 @@ function parseDuration(duration: string): number {
   }
 }
 
+// =============================================================================
+// Token Generation
+// =============================================================================
+
 /**
  * Generate an access token (JWT)
  */
 export async function generateAccessToken(payload: {
   userId: string;
-  organizationId: string;
+  organizationId: string | null; // Null for SYSTEM_ADMIN
   role: string;
   scopes: TokenScope[];
 }): Promise<string> {
   const expiresIn = parseDuration(authConfig.jwt.accessTokenExpiry);
+  const isSystemAdmin = payload.role === "SYSTEM_ADMIN";
 
-  return new SignJWT({
+  const tokenPayload = {
     sub: payload.userId,
     orgId: payload.organizationId,
     role: payload.role,
     scopes: payload.scopes,
-    type: "access",
-  } as AccessTokenPayload)
+    type: "access" as const,
+    ...(isSystemAdmin && { isSystemAdmin: true }),
+  };
+
+  return new SignJWT(tokenPayload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setIssuer(authConfig.jwt.issuer)
@@ -89,17 +128,22 @@ export async function generateAccessToken(payload: {
  */
 export async function generateRefreshToken(payload: {
   userId: string;
-  organizationId: string;
+  organizationId: string | null; // Null for SYSTEM_ADMIN
   tokenId: string;
+  role?: string;
 }): Promise<string> {
   const expiresIn = parseDuration(authConfig.jwt.refreshTokenExpiry);
+  const isSystemAdmin = payload.role === "SYSTEM_ADMIN";
 
-  return new SignJWT({
+  const tokenPayload = {
     sub: payload.userId,
     orgId: payload.organizationId,
     tokenId: payload.tokenId,
-    type: "refresh",
-  } as RefreshTokenPayload)
+    type: "refresh" as const,
+    ...(isSystemAdmin && { isSystemAdmin: true }),
+  };
+
+  return new SignJWT(tokenPayload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setIssuer(authConfig.jwt.issuer)
@@ -107,6 +151,10 @@ export async function generateRefreshToken(payload: {
     .setExpirationTime(`${expiresIn}s`)
     .sign(getSecretKey());
 }
+
+// =============================================================================
+// Token Verification
+// =============================================================================
 
 /**
  * Verify and decode an access token
@@ -120,11 +168,14 @@ export async function verifyAccessToken(
       audience: authConfig.jwt.audience,
     });
 
-    if (payload.type !== "access") {
+    // Validate payload structure with Zod
+    const result = AccessTokenPayloadSchema.safeParse(payload);
+    if (!result.success) {
       return null;
     }
 
-    return payload as AccessTokenPayload;
+    // Return validated payload with JWT claims
+    return { ...result.data, ...payload };
   } catch {
     return null;
   }
@@ -142,11 +193,14 @@ export async function verifyRefreshToken(
       audience: authConfig.jwt.audience,
     });
 
-    if (payload.type !== "refresh") {
+    // Validate payload structure with Zod
+    const result = RefreshTokenPayloadSchema.safeParse(payload);
+    if (!result.success) {
       return null;
     }
 
-    return payload as RefreshTokenPayload;
+    // Return validated payload with JWT claims
+    return { ...result.data, ...payload };
   } catch {
     return null;
   }

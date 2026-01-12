@@ -24,9 +24,10 @@ model Organization {
   clientId         String  @unique @default(cuid())
   clientSecretHash String?
 
-  // Legacy API key (deprecated, use OAuth)
-  apiKey     String? @unique
-  apiKeyHash String?
+  // OAuth client credentials - API key used to obtain access tokens
+  // Partners exchange this key via POST /api/oauth/token for JWT bearer tokens
+  apiKey     String? @unique // Last 8 chars stored for identification
+  apiKeyHash String? // Full key hash for validation
 
   users          User[]
   assets         Asset[]
@@ -40,10 +41,9 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([clientId])
-  @@index([apiKey])
   @@index([status])
   @@index([type])
+  @@map("organizations")
 }
 
 model Asset {
@@ -69,7 +69,7 @@ model Asset {
   @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([name])
-  @@index([externalId])
+  @@map("assets")
 }
 
 // =============================================================================
@@ -81,9 +81,9 @@ model SchemaRegistry {
   version     String  @unique
   name        String?
   description String?
-  schema    Json
-  checksum  String?
-  isActive  Boolean @default(true)
+  schema      Json
+  checksum    String?
+  isActive    Boolean @default(true)
 
   changelog    String?
   deprecatedAt DateTime?
@@ -93,8 +93,8 @@ model SchemaRegistry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([version])
   @@index([checksum])
+  @@map("schema_registries")
 }
 
 model ValidationRule {
@@ -118,8 +118,8 @@ model ValidationRule {
   updatedAt DateTime @updatedAt
 
   @@unique([name, version])
-  @@index([isActive])
   @@index([name, isActive])
+  @@map("validation_rules")
 }
 
 model KpiRecord {
@@ -150,6 +150,7 @@ model KpiRecord {
   @@index([schemaVersionId])
   @@index([validationStatus])
   @@index([checksum])
+  @@map("kpi_records")
 }
 
 // =============================================================================
@@ -164,8 +165,9 @@ model User {
   passwordHash  String
   emailVerified Boolean  @default(false)
 
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Nullable for SYSTEM_ADMIN users who operate above the tenant layer
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   apiTokens   ApiToken[]
   auditLogs   AuditLog[]
@@ -175,7 +177,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   @@index([organizationId])
-  @@index([email])
+  @@map("users")
 }
 
 model ApiToken {
@@ -205,10 +207,10 @@ model ApiToken {
 
   createdAt DateTime @default(now())
 
-  @@index([token])
   @@index([organizationId])
   @@index([expiresAt])
   @@index([revoked])
+  @@map("api_tokens")
 }
 
 // =============================================================================
@@ -216,9 +218,9 @@ model ApiToken {
 // =============================================================================
 
 model AuditLog {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String?
   user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -245,6 +247,7 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@index([resource, resourceId])
+  @@map("audit_logs")
 }
 
 model Submission {
@@ -291,8 +294,8 @@ model Submission {
   @@index([organizationId, submittedAt])
   @@index([status])
   @@index([validationStatus])
-  @@index([idempotencyKey])
   @@index([sourceTag])
+  @@map("submissions")
 }
 
 model BatchSubmissionItem {
@@ -311,7 +314,7 @@ model BatchSubmissionItem {
   createdAt DateTime @default(now())
 
   @@unique([submissionId, itemIndex])
-  @@index([submissionId])
+  @@map("batch_submission_items")
 }
 
 // =============================================================================
@@ -345,6 +348,7 @@ model QueueItem {
   @@index([queueName, queueStatus])
   @@index([isDeadLetter])
   @@index([nextRetryAt])
+  @@map("queue_items")
 }
 
 model FraunhoferRequest {
@@ -376,7 +380,7 @@ model FraunhoferRequest {
   updatedAt DateTime @updatedAt
 
   @@index([status])
-  @@index([callbackId])
+  @@map("fraunhofer_requests")
 }
 
 // =============================================================================
@@ -418,8 +422,7 @@ model SigningRequest {
 
   @@index([assetId])
   @@index([status])
-  @@index([trustLayerRequestId])
-  @@index([idempotencyKey])
+  @@map("signing_requests")
 }
 
 model SignedDocument {
@@ -454,6 +457,7 @@ model SignedDocument {
   @@index([assetId])
   @@index([signedAt])
   @@index([expiresAt])
+  @@map("signed_documents")
 }
 
 // =============================================================================
@@ -485,8 +489,8 @@ model DocumentAccessGrant {
 
   @@unique([documentId, granteeType, granteeId])
   @@index([granteeType, granteeId])
-  @@index([documentId])
   @@index([expiresAt])
+  @@map("document_access_grants")
 }
 
 model DocumentAccessLog {
@@ -514,6 +518,7 @@ model DocumentAccessLog {
   @@index([documentId, createdAt])
   @@index([accessorType, accessorId, createdAt])
   @@index([action, createdAt])
+  @@map("document_access_logs")
 }
 
 // =============================================================================
@@ -540,6 +545,7 @@ model WebhookConfig {
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
+  @@map("webhook_configs")
 }
 
 model PartnerRequest {
@@ -566,7 +572,7 @@ model PartnerRequest {
   approvedAt  DateTime?
 
   @@index([status])
-  @@index([contactEmail])
+  @@map("partner_requests")
 }
 
 // =============================================================================
@@ -588,11 +594,11 @@ enum OrgStatus {
 }
 
 enum UserRole {
-  ADMIN
-  PARTNER_ADMIN
-  PARTNER_USER
-  CLIENT_ADMIN
-  CLIENT_USER
+  SYSTEM_ADMIN    // Platform-level admin, no organization affiliation
+  PARTNER_ADMIN   // Accredited Partner organization admin
+  PARTNER_USER    // Accredited Partner organization user
+  CLIENT_ADMIN    // Client organization admin
+  CLIENT_USER     // Client organization user
 }
 
 enum DataSource {
