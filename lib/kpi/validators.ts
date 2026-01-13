@@ -276,6 +276,98 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
+
+  // =========================================================================
+  // Extended KPIs (always optional per documentation)
+  // =========================================================================
+
+  // KPI 2-1: Year of Last Energy Renovation (Extended)
+  Renovation_Year_Of_Last_Energy_Renovation: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: true,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 2-2: Type of Last Energy Renovation (Extended)
+  Renovation_Type_Of_Last_Energy_Renovation: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: true,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 8-2: End Energy Consumption Actual (Extended)
+  Energy_Consumption_End_Energy_Consumption_Actual: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: true,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 8-3: End Energy Consumption Table (Extended)
+  Energy_Consumption_End_Energy_Consumption_Table: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: true,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 9-3: Other Indirect GHG Emissions (Extended)
+  GHG_Emissions_Other_Indirect_GHG_Emissions: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: false,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 9-4: Estimated Emissions Percentage (Extended)
+  GHG_Emissions_Estimated_Emissions_Percentage: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: false,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 9-5: Market or Location Based (Extended)
+  GHG_Emissions_Market_Or_Location_Based: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: false,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - always optional",
+  },
+
+  // KPI 9-6: Provider-Specific Emission Factor (Extended)
+  GHG_Emissions_Provider_Specific_Emission_Factor: {
+    relevantForNewBuildings: false,
+    relevantForExistingBuildings: true,
+    relevantForRenovation: false,
+    relevantForDemolition: false,
+    relevantForResidential: true,
+    relevantForNonResidential: true,
+    optional: "Extended KPI - required if KPI 9-1 to 9-3 not submitted",
+  },
 };
 
 // =============================================================================
@@ -359,21 +451,26 @@ function isFieldOptional(
   context: ValidationContext,
   relevance: FieldRelevance
 ): boolean {
+  // Extended KPIs are always optional
+  if (relevance.optional?.includes("Extended KPI")) {
+    return true;
+  }
+
   // Fields marked with "If available" are always optional
   if (relevance.optional?.includes("If available")) {
     return true;
   }
-  
+
   // KPI 1-1 is optional if taxonomy aligned
   if (fieldName === "Building_Permit_Date_Of_Building_Permit_Application" && context.taxonomyAligned) {
     return true;
   }
-  
+
   // EPC detail fields (7-2 to 7-7) are optional if digital EPC is available
   if (relevance.optional?.includes("no digitally readable EPC") && context.hasDigitalEpc) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -486,7 +583,12 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
 }
 
 /**
- * Full validation: Schema + Dependencies
+ * Full validation: Normalization + Schema + Dependencies
+ *
+ * Supports multiple input formats per Connector 1 AC3:
+ * - API format: { "kpi_1-1": "2025-10-15" }
+ * - Number format: { "1-1": "2025-10-15" }
+ * - Internal format: { "Building_Permit_...": "2025-10-15" }
  */
 export function validateFlatKpi(rawData: unknown): {
   success: boolean;
@@ -494,13 +596,30 @@ export function validateFlatKpi(rawData: unknown): {
   errors: ValidationError[];
   warnings: ValidationError[];
   context?: ValidationContext;
+  unknownFields?: string[];
 } {
-  // Import schema dynamically to avoid circular deps
+  // Import modules dynamically to avoid circular deps
   const { FlatKpiSchema } = require("./schema");
-  
+  const { normalizeKpiInput } = require("./normalizer");
+
+  // Step 0: Normalize input to internal field names
+  let normalizedData = rawData;
+  let unknownFields: string[] = [];
+
+  if (typeof rawData === "object" && rawData !== null) {
+    const normalization = normalizeKpiInput(rawData as Record<string, unknown>);
+    normalizedData = normalization.data;
+    unknownFields = normalization.unknownFields;
+
+    // Add warnings for unknown fields
+    if (unknownFields.length > 0) {
+      // Will be added to warnings after schema validation
+    }
+  }
+
   // Step 1: Schema validation
-  const schemaResult = FlatKpiSchema.safeParse(rawData);
-  
+  const schemaResult = FlatKpiSchema.safeParse(normalizedData);
+
   if (!schemaResult.success) {
     const schemaErrors: ValidationError[] = schemaResult.error.issues.map((err: { path: (string | number)[]; message: string }) => ({
       field: err.path.join("."),
@@ -508,23 +627,36 @@ export function validateFlatKpi(rawData: unknown): {
       message: err.message,
       severity: "error" as const,
     }));
-    
+
     return {
       success: false,
       errors: schemaErrors,
       warnings: [],
+      unknownFields: unknownFields.length > 0 ? unknownFields : undefined,
     };
   }
-  
+
   // Step 2: Dependency validation
   const dependencyResult = validateDependencies(schemaResult.data);
-  
+
+  // Add unknown field warnings
+  const allWarnings = [...dependencyResult.warnings];
+  for (const field of unknownFields) {
+    allWarnings.push({
+      field,
+      code: "UNKNOWN_FIELD",
+      message: `Unknown field "${field}" was ignored. Valid formats: kpi_X-X, X-X, or internal field names.`,
+      severity: "warning",
+    });
+  }
+
   return {
     success: dependencyResult.valid,
     data: schemaResult.data,
     errors: dependencyResult.errors,
-    warnings: dependencyResult.warnings,
+    warnings: allWarnings,
     context: dependencyResult.context,
+    unknownFields: unknownFields.length > 0 ? unknownFields : undefined,
   };
 }
 
