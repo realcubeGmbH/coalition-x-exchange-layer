@@ -4,11 +4,13 @@
  * 1. Building Type (Residential / Non-Residential)
  * 2. Building State (New / Existing / Renovation)
  * 3. EPC Type (Consumption-based / Demand-based)
- * 
+ *
  * Based on RelevantFor_* flags in the flat JSON schema descriptions
  */
 
-import type { FlatKpiInput } from "./schema";
+import { FlatKpiSchema } from "./schema.js";
+import { normalizeKpiInput } from "./normalizer";
+import type { FlatKpiInput } from "./schema.js";
 
 // =============================================================================
 // Types
@@ -23,8 +25,18 @@ export interface ValidationError {
 
 export interface ValidationContext {
   buildingCategory: "RESIDENTIAL" | "NON_RESIDENTIAL" | null;
-  activityInValueChain: "CONSTRUCTION" | "EXISTING_BUILDING" | "RENOVATION" | "DEMOLITION" | null;
-  epcType: "CONSUMPTION_BASED" | "DEMAND_BASED" | "NO_OBLIGATION" | "NON_EXISTENT" | null;
+  activityInValueChain:
+    | "CONSTRUCTION"
+    | "EXISTING_BUILDING"
+    | "RENOVATION"
+    | "DEMOLITION"
+    | null;
+  epcType:
+    | "CONSUMPTION_BASED"
+    | "DEMAND_BASED"
+    | "NO_OBLIGATION"
+    | "NON_EXISTENT"
+    | null;
   taxonomyAligned: boolean;
   hasDigitalEpc: boolean;
 }
@@ -63,7 +75,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForNonResidential: true,
     optional: "Data point obsolete if KPI 6-1 is met (taxonomy aligned)",
   },
-  
+
   // KPI 1-2: Year of Construction
   Building_Permit_Year_Of_Construction: {
     relevantForNewBuildings: true,
@@ -73,7 +85,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 3-1: Primary Use of Building
   Building_Use_Type_Primary_Use_Of_Building: {
     relevantForNewBuildings: true,
@@ -83,17 +95,18 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 4-1: Fossil Fuels Usage
-  Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels: {
-    relevantForNewBuildings: true,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: false, // Only for non-residential
-    relevantForNonResidential: true,
-  },
-  
+  Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels:
+    {
+      relevantForNewBuildings: true,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: false, // Only for non-residential
+      relevantForNonResidential: true,
+    },
+
   // KPI 5-1: Usable Area (heated/cooled) - Residential
   Surface_Measure_Usable_Area_heated_Or_Cooled: {
     relevantForNewBuildings: true,
@@ -103,7 +116,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true, // Only for residential
     relevantForNonResidential: false,
   },
-  
+
   // KPI 5-2: Useful Internal Floor Area - Non-Residential
   Surface_Measure_Useful_Internal_Floor_Area_heated_Or_Cooled: {
     relevantForNewBuildings: true,
@@ -113,7 +126,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: false, // Only for non-residential
     relevantForNonResidential: true,
   },
-  
+
   // KPI 5-3: Gross External Area (IPMS 1)
   Surface_Measure_Gross_External_Area_IPMS_1: {
     relevantForNewBuildings: true,
@@ -124,7 +137,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForNonResidential: true,
     optional: "If available",
   },
-  
+
   // KPI 5-4: Total Gross Internal Area (IPMS 2)
   Surface_Measure_Total_Gross_Internal_Area_IPMS_2: {
     relevantForNewBuildings: true,
@@ -135,7 +148,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForNonResidential: true,
     optional: "If available",
   },
-  
+
   // KPI 5-5: Rental Area
   Surface_Measure_Rental_Area: {
     relevantForNewBuildings: true,
@@ -146,7 +159,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForNonResidential: true,
     optional: "If available",
   },
-  
+
   // KPI 6-1: Taxonomy Alignment
   Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned: {
     relevantForNewBuildings: true,
@@ -156,7 +169,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 7-1: EPC File
   Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC: {
     relevantForNewBuildings: true,
@@ -166,7 +179,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 7-2: EPC Class
   Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class: {
     relevantForNewBuildings: true,
@@ -177,66 +190,71 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForNonResidential: true,
     optional: "Only required if no digitally readable EPC is available",
   },
-  
+
   // KPI 7-3: Primary Energy Consumption (Consumption-based EPC)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption: {
-    relevantForNewBuildings: false,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-    requiresConsumptionBasedEpc: true,
-    optional: "Only required for consumption-based EPC without digital file",
-  },
-  
+  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption:
+    {
+      relevantForNewBuildings: false,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+      requiresConsumptionBasedEpc: true,
+      optional: "Only required for consumption-based EPC without digital file",
+    },
+
   // KPI 7-4: Primary Energy Demand (Demand-based EPC)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand: {
-    relevantForNewBuildings: true,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-    requiresDemandBasedEpc: true,
-    optional: "Only required for demand-based EPC without digital file",
-  },
-  
+  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand:
+    {
+      relevantForNewBuildings: true,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+      requiresDemandBasedEpc: true,
+      optional: "Only required for demand-based EPC without digital file",
+    },
+
   // KPI 7-5: End Energy Consumption (Consumption-based EPC)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption: {
-    relevantForNewBuildings: false,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-    requiresConsumptionBasedEpc: true,
-    optional: "Only required for consumption-based EPC without digital file",
-  },
-  
+  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption:
+    {
+      relevantForNewBuildings: false,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+      requiresConsumptionBasedEpc: true,
+      optional: "Only required for consumption-based EPC without digital file",
+    },
+
   // KPI 7-6: End Energy Demand (Demand-based EPC)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand: {
-    relevantForNewBuildings: true,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-    requiresDemandBasedEpc: true,
-    optional: "Only required for demand-based EPC without digital file",
-  },
-  
+  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand:
+    {
+      relevantForNewBuildings: true,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+      requiresDemandBasedEpc: true,
+      optional: "Only required for demand-based EPC without digital file",
+    },
+
   // KPI 7-7: EPC Expiry Date
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date: {
-    relevantForNewBuildings: false,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: true,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-    optional: "Only required if no digitally readable EPC is available",
-  },
-  
+  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date:
+    {
+      relevantForNewBuildings: false,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: true,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+      optional: "Only required if no digitally readable EPC is available",
+    },
+
   // KPI 7-8: EPC Type
   Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type: {
     relevantForNewBuildings: false,
@@ -246,7 +264,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 8-1: Heating Medium
   Energy_Consumption_Heating_Medium: {
     relevantForNewBuildings: true,
@@ -256,7 +274,7 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 9-1: Direct GHG Emissions
   GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset: {
     relevantForNewBuildings: false,
@@ -266,16 +284,17 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
     relevantForResidential: true,
     relevantForNonResidential: true,
   },
-  
+
   // KPI 9-2: Indirect GHG Emissions from Energy
-  GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset: {
-    relevantForNewBuildings: false,
-    relevantForExistingBuildings: true,
-    relevantForRenovation: false,
-    relevantForDemolition: false,
-    relevantForResidential: true,
-    relevantForNonResidential: true,
-  },
+  GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset:
+    {
+      relevantForNewBuildings: false,
+      relevantForExistingBuildings: true,
+      relevantForRenovation: false,
+      relevantForDemolition: false,
+      relevantForResidential: true,
+      relevantForNonResidential: true,
+    },
 
   // =========================================================================
   // Extended KPIs (always optional per documentation)
@@ -377,28 +396,33 @@ const FIELD_RELEVANCE: Record<string, FieldRelevance> = {
 function deriveContext(data: FlatKpiInput): ValidationContext {
   // Determine building category from primary use
   let buildingCategory: "RESIDENTIAL" | "NON_RESIDENTIAL" | null = null;
-  
+
   if (data.building_category) {
     buildingCategory = data.building_category;
   } else if (data.Building_Use_Type_Primary_Use_Of_Building) {
-    buildingCategory = data.Building_Use_Type_Primary_Use_Of_Building === "RESIDENTIAL" 
-      ? "RESIDENTIAL" 
-      : "NON_RESIDENTIAL";
+    buildingCategory =
+      data.Building_Use_Type_Primary_Use_Of_Building === "RESIDENTIAL"
+        ? "RESIDENTIAL"
+        : "NON_RESIDENTIAL";
   }
-  
+
   // Get activity in value chain
   const activityInValueChain = data.activity_in_value_chain || null;
-  
+
   // Get EPC type
-  const epcType = data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type || null;
-  
+  const epcType =
+    data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type ||
+    null;
+
   // Check if taxonomy aligned
-  const taxonomyAligned = data.Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned !== "NO" &&
+  const taxonomyAligned =
+    data.Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned !== "NO" &&
     data.Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned !== undefined;
-  
+
   // Check if digital EPC is available
-  const hasDigitalEpc = !!data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC;
-  
+  const hasDigitalEpc =
+    !!data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC;
+
   return {
     buildingCategory,
     activityInValueChain,
@@ -415,34 +439,46 @@ function isFieldRelevant(
 ): boolean {
   // Check building state relevance
   if (context.activityInValueChain) {
-    const stateRelevant = 
-      (context.activityInValueChain === "CONSTRUCTION" && relevance.relevantForNewBuildings) ||
-      (context.activityInValueChain === "EXISTING_BUILDING" && relevance.relevantForExistingBuildings) ||
-      (context.activityInValueChain === "RENOVATION" && relevance.relevantForRenovation) ||
-      (context.activityInValueChain === "DEMOLITION" && relevance.relevantForDemolition);
-    
+    const stateRelevant =
+      (context.activityInValueChain === "CONSTRUCTION" &&
+        relevance.relevantForNewBuildings) ||
+      (context.activityInValueChain === "EXISTING_BUILDING" &&
+        relevance.relevantForExistingBuildings) ||
+      (context.activityInValueChain === "RENOVATION" &&
+        relevance.relevantForRenovation) ||
+      (context.activityInValueChain === "DEMOLITION" &&
+        relevance.relevantForDemolition);
+
     if (!stateRelevant) return false;
   }
-  
+
   // Check building category relevance
   if (context.buildingCategory) {
-    const categoryRelevant = 
-      (context.buildingCategory === "RESIDENTIAL" && relevance.relevantForResidential) ||
-      (context.buildingCategory === "NON_RESIDENTIAL" && relevance.relevantForNonResidential);
-    
+    const categoryRelevant =
+      (context.buildingCategory === "RESIDENTIAL" &&
+        relevance.relevantForResidential) ||
+      (context.buildingCategory === "NON_RESIDENTIAL" &&
+        relevance.relevantForNonResidential);
+
     if (!categoryRelevant) return false;
   }
-  
+
   // Check EPC type relevance
   if (context.epcType) {
-    if (relevance.requiresConsumptionBasedEpc && context.epcType !== "CONSUMPTION_BASED") {
+    if (
+      relevance.requiresConsumptionBasedEpc &&
+      context.epcType !== "CONSUMPTION_BASED"
+    ) {
       return false;
     }
-    if (relevance.requiresDemandBasedEpc && context.epcType !== "DEMAND_BASED") {
+    if (
+      relevance.requiresDemandBasedEpc &&
+      context.epcType !== "DEMAND_BASED"
+    ) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -462,12 +498,18 @@ function isFieldOptional(
   }
 
   // KPI 1-1 is optional if taxonomy aligned
-  if (fieldName === "Building_Permit_Date_Of_Building_Permit_Application" && context.taxonomyAligned) {
+  if (
+    fieldName === "Building_Permit_Date_Of_Building_Permit_Application" &&
+    context.taxonomyAligned
+  ) {
     return true;
   }
 
   // EPC detail fields (7-2 to 7-7) are optional if digital EPC is available
-  if (relevance.optional?.includes("no digitally readable EPC") && context.hasDigitalEpc) {
+  if (
+    relevance.optional?.includes("no digitally readable EPC") &&
+    context.hasDigitalEpc
+  ) {
     return true;
   }
 
@@ -485,19 +527,19 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
   const context = deriveContext(data);
-  
+
   // Create a plain object for iteration - spread assigns to Record<string, unknown> cleanly
   const dataRecord: Record<string, unknown> = { ...data };
-  
+
   // Check each field
   for (const [fieldName, relevance] of Object.entries(FIELD_RELEVANCE)) {
     const value = dataRecord[fieldName];
     const hasValue = value !== undefined && value !== null && value !== "";
-    
+
     // Check if field is relevant to this context
     const isRelevant = isFieldRelevant(fieldName, context, relevance);
     const isOptional = isFieldOptional(fieldName, context, relevance);
-    
+
     // If field is required (relevant and not optional) but missing
     if (isRelevant && !isOptional && !hasValue) {
       errors.push({
@@ -507,7 +549,7 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
         severity: "error",
       });
     }
-    
+
     // If field is provided but not relevant (warning only)
     if (!isRelevant && hasValue) {
       warnings.push({
@@ -518,41 +560,91 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
       });
     }
   }
-  
+
   // Cross-field validations
-  
+
+  // ZIA Rule: Neubau/Bestand consistency with year of construction
+  // Buildings after December 2020 = Neubau (CONSTRUCTION)
+  // Buildings on or before December 2020 = Bestand (EXISTING_BUILDING)
+  const yearOfConstruction = data.Building_Permit_Year_Of_Construction;
+  const NEUBAU_CUTOFF_YEAR = 2020;
+
+  if (yearOfConstruction && context.activityInValueChain) {
+    const isAfter2020 = yearOfConstruction > NEUBAU_CUTOFF_YEAR;
+
+    if (context.activityInValueChain === "CONSTRUCTION" && !isAfter2020) {
+      errors.push({
+        field: "activity_in_value_chain",
+        code: "NEUBAU_YEAR_MISMATCH",
+        message: `Building classified as Neubau (CONSTRUCTION) but year of construction (${yearOfConstruction}) is not after ${NEUBAU_CUTOFF_YEAR}. Per ZIA guidelines, only buildings after December ${NEUBAU_CUTOFF_YEAR} qualify as Neubau.`,
+        severity: "error",
+      });
+    }
+
+    if (context.activityInValueChain === "EXISTING_BUILDING" && isAfter2020) {
+      errors.push({
+        field: "activity_in_value_chain",
+        code: "BESTAND_YEAR_MISMATCH",
+        message: `Building classified as Bestand (EXISTING_BUILDING) but year of construction (${yearOfConstruction}) is after ${NEUBAU_CUTOFF_YEAR}. Per ZIA guidelines, buildings after December ${NEUBAU_CUTOFF_YEAR} should be classified as Neubau (CONSTRUCTION).`,
+        severity: "error",
+      });
+    }
+  }
+
+  // Warn if year provided but activity_in_value_chain not specified
+  if (yearOfConstruction && !context.activityInValueChain) {
+    const suggestedType =
+      yearOfConstruction > NEUBAU_CUTOFF_YEAR
+        ? "CONSTRUCTION"
+        : "EXISTING_BUILDING";
+    warnings.push({
+      field: "activity_in_value_chain",
+      code: "ACTIVITY_TYPE_RECOMMENDED",
+      message: `Based on year of construction (${yearOfConstruction}), activity_in_value_chain should be "${suggestedType}". Consider providing this field.`,
+      severity: "warning",
+    });
+  }
+
   // EPC consumption fields required for consumption-based EPC
   if (context.epcType === "CONSUMPTION_BASED" && !context.hasDigitalEpc) {
-    if (!data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption) {
+    if (
+      !data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption
+    ) {
       errors.push({
-        field: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption",
+        field:
+          "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption",
         code: "EPC_CONSUMPTION_REQUIRED",
-        message: "Primary energy consumption is required for consumption-based EPC without digital file",
+        message:
+          "Primary energy consumption is required for consumption-based EPC without digital file",
         severity: "error",
       });
     }
   }
-  
+
   // EPC demand fields required for demand-based EPC
   if (context.epcType === "DEMAND_BASED" && !context.hasDigitalEpc) {
-    if (!data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand) {
+    if (
+      !data.Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand
+    ) {
       errors.push({
-        field: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand",
+        field:
+          "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand",
         code: "EPC_DEMAND_REQUIRED",
-        message: "Primary energy demand is required for demand-based EPC without digital file",
+        message:
+          "Primary energy demand is required for demand-based EPC without digital file",
         severity: "error",
       });
     }
   }
-  
+
   // At least one surface measure required
-  const hasSurfaceMeasure = 
+  const hasSurfaceMeasure =
     data.Surface_Measure_Usable_Area_heated_Or_Cooled ||
     data.Surface_Measure_Useful_Internal_Floor_Area_heated_Or_Cooled ||
     data.Surface_Measure_Gross_External_Area_IPMS_1 ||
     data.Surface_Measure_Total_Gross_Internal_Area_IPMS_2 ||
     data.Surface_Measure_Rental_Area;
-  
+
   if (!hasSurfaceMeasure && context.activityInValueChain !== "DEMOLITION") {
     warnings.push({
       field: "Surface_Measure",
@@ -561,11 +653,13 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
       severity: "warning",
     });
   }
-  
+
   // GHG data requires year
-  if ((data.GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset ||
-       data.GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset) &&
-      !data.GHG_Emissions_Year) {
+  if (
+    (data.GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset ||
+      data.GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset) &&
+    !data.GHG_Emissions_Year
+  ) {
     warnings.push({
       field: "GHG_Emissions_Year",
       code: "GHG_YEAR_RECOMMENDED",
@@ -573,7 +667,7 @@ export function validateDependencies(data: FlatKpiInput): ValidationResult {
       severity: "warning",
     });
   }
-  
+
   return {
     valid: errors.length === 0,
     errors,
@@ -598,10 +692,6 @@ export function validateFlatKpi(rawData: unknown): {
   context?: ValidationContext;
   unknownFields?: string[];
 } {
-  // Import modules dynamically to avoid circular deps
-  const { FlatKpiSchema } = require("./schema");
-  const { normalizeKpiInput } = require("./normalizer");
-
   // Step 0: Normalize input to internal field names
   let normalizedData = rawData;
   let unknownFields: string[] = [];
@@ -621,12 +711,14 @@ export function validateFlatKpi(rawData: unknown): {
   const schemaResult = FlatKpiSchema.safeParse(normalizedData);
 
   if (!schemaResult.success) {
-    const schemaErrors: ValidationError[] = schemaResult.error.issues.map((err: { path: (string | number)[]; message: string }) => ({
-      field: err.path.join("."),
-      code: "SCHEMA_VALIDATION_ERROR",
-      message: err.message,
-      severity: "error" as const,
-    }));
+    const schemaErrors: ValidationError[] = schemaResult.error.issues.map(
+      (err) => ({
+        field: err.path.join("."),
+        code: "SCHEMA_VALIDATION_ERROR",
+        message: err.message,
+        severity: "error" as const,
+      })
+    );
 
     return {
       success: false,
@@ -659,4 +751,3 @@ export function validateFlatKpi(rawData: unknown): {
     unknownFields: unknownFields.length > 0 ? unknownFields : undefined,
   };
 }
-
