@@ -74,6 +74,26 @@ export class AssetService {
   }
 
   /**
+   * Get asset details by external ID
+   */
+  async getByExternalId(externalId: string, organizationId: string): Promise<AssetDetailsDto> {
+    const asset = await this.repository.findByExternalId(externalId, organizationId);
+
+    if (!asset) {
+      throw ApiError.notFound(`Asset with external ID '${externalId}' not found`);
+    }
+
+    // Get full details for the asset
+    const assetWithDetails = await this.repository.findByIdWithDetails(asset.id, organizationId);
+
+    if (!assetWithDetails) {
+      throw ApiError.assetNotFound(asset.id);
+    }
+
+    return this.toAssetDetailsDto(assetWithDetails);
+  }
+
+  /**
    * Create a new asset
    */
   async create(

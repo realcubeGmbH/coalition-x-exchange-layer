@@ -8,9 +8,9 @@
  * Based on RelevantFor_* flags in the flat JSON schema descriptions
  */
 
-import { FlatKpiSchema } from "./schema.js";
+import { FlatKpiSchema } from "./schema";
 import { normalizeKpiInput } from "./normalizer";
-import type { FlatKpiInput } from "./schema.js";
+import type { FlatKpiInput } from "./schema";
 
 // =============================================================================
 // Types
