@@ -163,6 +163,80 @@ export class SubmissionService {
       },
     });
   }
+
+  /**
+   * Find many submissions by organization with pagination
+   */
+  async findManyByOrganization(params: {
+    organizationId: string;
+    skip?: number;
+    take?: number;
+    filters?: {
+      status?: SubmissionStatus;
+      validationStatus?: ValidationStatus;
+      submissionType?: SubmissionType;
+      sourceTag?: SourceTag;
+    };
+  }): Promise<Submission[]> {
+    const { organizationId, skip = 0, take = 20, filters = {} } = params;
+
+    return prisma.submission.findMany({
+      where: {
+        organizationId,
+        ...(filters.status && { status: filters.status }),
+        ...(filters.validationStatus && {
+          validationStatus: filters.validationStatus,
+        }),
+        ...(filters.submissionType && {
+          submissionType: filters.submissionType,
+        }),
+        ...(filters.sourceTag && { sourceTag: filters.sourceTag }),
+      },
+      orderBy: {
+        submittedAt: "desc",
+      },
+      skip,
+      take,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Count submissions by organization
+   */
+  async countByOrganization(params: {
+    organizationId: string;
+    filters?: {
+      status?: SubmissionStatus;
+      validationStatus?: ValidationStatus;
+      submissionType?: SubmissionType;
+      sourceTag?: SourceTag;
+    };
+  }): Promise<number> {
+    const { organizationId, filters = {} } = params;
+
+    return prisma.submission.count({
+      where: {
+        organizationId,
+        ...(filters.status && { status: filters.status }),
+        ...(filters.validationStatus && {
+          validationStatus: filters.validationStatus,
+        }),
+        ...(filters.submissionType && {
+          submissionType: filters.submissionType,
+        }),
+        ...(filters.sourceTag && { sourceTag: filters.sourceTag }),
+      },
+    });
+  }
 }
 
 // =============================================================================

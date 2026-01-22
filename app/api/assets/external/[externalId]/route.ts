@@ -22,31 +22,25 @@ const handleGet: ApiHandler = async (request, auth, context) => {
       throw ApiError.missingField("externalId");
     }
 
-    // Get URL params for KPI pagination
-    const url = new URL(request.url);
-    const limit = Math.min(parseInt(url.searchParams.get("limit") || "10"), 50);
-    const offset = parseInt(url.searchParams.get("offset") || "0");
-
     // Get asset by external ID (org-scoped)
     const assetDetails = await assetService.getByExternalId(
       externalId,
       auth.organizationId!
     );
 
-    // Get KPI history for this asset
+    // Get only the latest KPI submission (highest data version)
     const kpiHistory = await kpiService.listKpiHistoryWithSchema({
       assetId: assetDetails.id,
       organizationId: auth.organizationId!,
-      limit,
-      offset,
+      limit: 1,
+      offset: 0,
     });
 
-    // Return asset data + KPIs
+    // Return asset data + latest KPI (or null if none exists)
     return NextResponse.json({
       data: {
         asset: assetDetails,
-        kpis: kpiHistory.data,
-        pagination: kpiHistory.pagination,
+        kpis: kpiHistory.data.length > 0 ? kpiHistory.data[0] : null,
       },
     });
   } catch (error) {
