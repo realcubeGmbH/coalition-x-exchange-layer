@@ -11,11 +11,13 @@ const publicRoutes = [
   "/",
   "/login",
   "/register",
+  "/docs/swagger", // Swagger API documentation (public)
   "/api/auth/login", // User login (admin, clients)
   "/api/auth/register", // User registration (clients)
   "/api/auth/token", // OAuth 2.0 token endpoint (all grants)
   "/api/partner-requests", // Partner application
   "/api/health",
+  "/api/docs/swagger-json", // Swagger JSON endpoint (public)
 ];
 
 // Protected API routes requiring Bearer token

@@ -23,7 +23,7 @@ const handleGet: ApiHandler = async (request, auth) => {
   const url = new URL(request.url);
 
   const query = ListOrganizationsQuerySchema.parse({
-    type: url.searchParams.get("type") ?? undefined,
+    type: "ACCREDITED_PARTNER", // Always filter by ACCREDITED_PARTNER
     status: url.searchParams.get("status") ?? undefined,
     page: url.searchParams.get("page") ?? 1,
     limit: url.searchParams.get("limit") ?? 20,
