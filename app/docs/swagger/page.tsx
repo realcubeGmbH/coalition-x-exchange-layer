@@ -47,21 +47,34 @@ export default function SwaggerPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
-        <h1>Loading Swagger Documentation...</h1>
-        <p>Please wait...</p>
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100vh',
+        fontFamily: 'monospace',
+        color: '#666'
+      }}>
+        Loading API Documentation...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
-        <h1>Error Loading Documentation</h1>
-        <p>{error}</p>
-        <p style={{ marginTop: '20px', color: '#666' }}>
-          Make sure the swagger.yaml file exists at docs/swagger.yaml
-        </p>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100vh',
+        fontFamily: 'monospace',
+        color: '#c00'
+      }}>
+        <div>Error: {error}</div>
+        <div style={{ marginTop: '20px', color: '#666', fontSize: '14px' }}>
+          API documentation unavailable
+        </div>
       </div>
     );
   }
