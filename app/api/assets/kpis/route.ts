@@ -25,6 +25,8 @@ import { createServiceContext } from "@/lib/domain/shared";
 interface SubmitKpiBody {
   asset_id?: string;
   external_id?: string;
+  asset_name?: string;
+  asset_address?: string;
   kpis: Record<string, unknown>;
   schema_version?: string;
   idempotency_key?: string;
@@ -69,6 +71,8 @@ const handlePost: ApiHandler = async (request, auth) => {
       kpis: body.kpis,
       schemaVersion: body.schema_version,
       idempotencyKey: body.idempotency_key,
+      assetName: body.asset_name,
+      assetAddress: body.asset_address,
       ctx,
     });
 

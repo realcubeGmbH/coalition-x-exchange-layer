@@ -100,6 +100,8 @@ export interface SubmitKpiByIdentifierParams {
   kpis: Record<string, unknown>;
   schemaVersion?: string;
   idempotencyKey?: string;
+  assetName?: string;
+  assetAddress?: string;
   ctx: ServiceContext;
 }
 
@@ -627,7 +629,7 @@ export class KpiService {
       throw ApiError.validation("Either asset_id or external_id is required");
     }
 
-    // Find asset by identifier
+    // Find or create asset by identifier
     let asset;
     if (assetId) {
       asset = await prisma.asset.findFirst({
@@ -641,15 +643,32 @@ export class KpiService {
         throw ApiError.assetNotFound(assetId);
       }
     } else if (externalId) {
+      // Find existing asset or create new one
       asset = await prisma.asset.findFirst({
         where: { externalId, organizationId },
       });
+      
       if (!asset) {
-        this.logger.warn("KPI submission for unknown external_id", {
+        this.logger.info("Creating new asset for external_id", {
           externalId,
           organizationId,
         });
-        throw ApiError.notFound("Asset with external_id", externalId);
+        
+        asset = await prisma.asset.create({
+          data: {
+            organizationId,
+            externalId,
+            name: params.assetName || externalId,
+            address: params.assetAddress,
+            dataSource: "API",
+            sourceTag: "PARTNER",
+          },
+        });
+        
+        this.logger.info("Asset created successfully", {
+          assetId: asset.id,
+          externalId,
+        });
       }
     }
 
