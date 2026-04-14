@@ -1,57 +1,50 @@
 /**
- * Partner Requests API
+ * Partner Sync API
  *
- * POST /api/partner-requests - Submit application (PUBLIC - no auth)
- * GET  /api/partner-requests - List applications (Admin only)
+ * POST /api/partner-requests - Receive accredited partner data from POM+
+ *
+ * Authenticated endpoint — requires OAuth Bearer token with partner:org-sync scope.
+ * Creates an accredited partner Organization + User and returns credentials.
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, type ApiHandler } from "@/lib/api-auth";
-import { partnerRequestService } from "@/lib/services";
+import { NextResponse } from "next/server";
 import {
-  CreatePartnerRequestSchema,
-  ListPartnerRequestsQuerySchema,
-} from "@/lib/domain/partner-request";
+  withAuth,
+  type ApiHandler,
+  getClientIp,
+  getUserAgent,
+} from "@/lib/api-auth";
+import { partnerSyncService } from "@/lib/services/partner-request.service";
+import { PartnerSyncSchema } from "@/lib/domain/partner-request";
+import { createServiceContext } from "@/lib/domain/shared";
 import { handleError } from "@/lib/core/ErrorHandler";
 
 // =============================================================================
-// POST - Submit Application (PUBLIC - No Auth Required)
+// POST - Receive Partner Sync (POM+ only)
 // =============================================================================
 
-export async function POST(request: NextRequest) {
+const handlePost: ApiHandler = async (request, auth) => {
   try {
     const body = await request.json();
-    const dto = CreatePartnerRequestSchema.parse(body);
+    const dto = PartnerSyncSchema.parse(body);
 
-    const result = await partnerRequestService.submitApplication(dto);
+    const ctx = createServiceContext({
+      userId: auth.userId,
+      organizationId: auth.organizationId,
+      ipAddress: getClientIp(request),
+      userAgent: getUserAgent(request),
+      isOrgLevel: auth.isOrgLevel,
+      isSystemAdmin: auth.isSystemAdmin,
+    });
+
+    const result = await partnerSyncService.sync(dto, ctx);
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return handleError(error);
   }
-}
-
-// =============================================================================
-// GET - List Applications (Admin Only)
-// =============================================================================
-
-const handleGet: ApiHandler = async (request) => {
-  const url = new URL(request.url);
-
-  const query = ListPartnerRequestsQuerySchema.parse({
-    status: url.searchParams.get("status") ?? undefined,
-    page: url.searchParams.get("page") ?? 1,
-    limit: url.searchParams.get("limit") ?? 20,
-  });
-
-  const result = await partnerRequestService.list(query);
-
-  return NextResponse.json({
-    applications: result.data,
-    pagination: result.pagination,
-  });
 };
 
-export const GET = withAuth(handleGet, {
-  requiredScopes: ["admin:users"],
+export const POST = withAuth(handlePost, {
+  requiredScopes: ["partner:org-sync"],
 });

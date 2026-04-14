@@ -275,6 +275,19 @@ export class OAuthService {
       ? filterValidOAuthScopes(scope.split(" "))
       : [...DEFAULT_PARTNER_SCOPES];
 
+    // Enforce restricted scopes — only the designated POM+ org can request partner:org-sync
+    const restrictedScopes = this.getRestrictedScopes();
+    const deniedScopes = requestedScopes.filter(
+      (s) => restrictedScopes.includes(s) && !this.isAllowedRestrictedScope(organization.id, s)
+    );
+    if (deniedScopes.length > 0) {
+      throw new OAuthError(
+        "invalid_scope",
+        `Your organization is not authorized for scope(s): ${deniedScopes.join(", ")}`,
+        403
+      );
+    }
+
     // Generate tokens
     const tokens = await createTokenPair({
       userId: `org:${organization.id}`,
@@ -490,6 +503,26 @@ export class OAuthService {
    */
   private getScopesForRole(role: string): TokenScope[] {
     return ROLE_SCOPES[role] || ["assets:read", "kpis:read"];
+  }
+
+  /**
+   * Scopes that are restricted to specific organizations.
+   * Any scope listed here will be rejected unless the org is explicitly allowed.
+   */
+  private getRestrictedScopes(): string[] {
+    return ["partner:org-sync"];
+  }
+
+  /**
+   * Check whether a specific organization is allowed a restricted scope.
+   * POM+ org ID is configured via POM_PARTNER_ORG_ID env variable.
+   */
+  private isAllowedRestrictedScope(orgId: string, scope: string): boolean {
+    const pomOrgId = process.env.POM_PARTNER_ORG_ID;
+    if (scope === "partner:org-sync") {
+      return !!pomOrgId && orgId === pomOrgId;
+    }
+    return false;
   }
 }
 

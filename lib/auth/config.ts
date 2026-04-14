@@ -62,6 +62,9 @@ export const TOKEN_SCOPES = {
   "admin:tokens": "Manage API tokens",
   "admin:audit": "View audit logs",
   "admin:organizations": "Manage organizations (system admin only)",
+
+  // Partner sync
+  "partner:org-sync": "Sync accredited partner data from POM+",
 } as const;
 
 export type TokenScope = keyof typeof TOKEN_SCOPES;

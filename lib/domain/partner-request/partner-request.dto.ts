@@ -1,74 +1,40 @@
 /**
- * Partner Request DTOs
+ * Partner Sync DTOs
+ *
+ * Input/output types for the accredited partner sync endpoint.
  */
 
-import type { PartnerRequestStatus } from "@prisma/client";
-
 // =============================================================================
-// Input DTOs
+// Input DTO
 // =============================================================================
 
-export interface CreatePartnerRequestDto {
-  companyName: string;
-  contactName: string;
-  contactEmail: string;
-  website?: string;
-  integrationType: "API" | "MANUAL" | "HYBRID";
-  estimatedVolume?: number;
-  useCase: string;
-}
-
-export interface ReviewPartnerRequestDto {
-  action: "approve" | "reject";
-  reviewNotes?: string;
-  rejectionReason?: string;
-}
-
-export interface ListPartnerRequestsQueryDto {
-  status?: PartnerRequestStatus;
-  page: number;
-  limit: number;
+export interface PartnerSyncDto {
+  user_id: string;
+  email: string;
+  org_id: string;
+  tech_provider_id: string;
+  user_role: string;
+  accreditation_flag: "Yes" | "No";
+  did: string;
+  initial_secret: string;
+  time_stamp: string;
 }
 
 // =============================================================================
-// Output DTOs
+// Output DTO
 // =============================================================================
 
-export interface PartnerRequestDto {
-  id: string;
-  companyName: string;
-  contactName: string;
-  contactEmail: string;
-  website: string | null;
-  integrationType: string;
-  estimatedVolume: number | null;
-  useCase: string;
-  status: PartnerRequestStatus;
-  reviewNotes: string | null;
-  rejectionReason: string | null;
-  organizationId: string | null;
-  requestedAt: string;
-  reviewedAt: string | null;
-  approvedAt: string | null;
-}
-
-export interface PartnerRequestCreatedDto {
-  applicationId: string;
-  status: "PENDING";
-  message: string;
-}
-
-export interface PartnerRequestApprovedDto {
-  applicationId: string;
-  status: "APPROVED";
+export interface PartnerSyncResultDto {
+  syncId: string;
   organization: {
     id: string;
-    clientId: string;
     name: string;
+    clientId: string;
   };
   credentials: {
     clientId: string;
     clientSecret: string;
   };
+  userId: string;
   message: string;
 }

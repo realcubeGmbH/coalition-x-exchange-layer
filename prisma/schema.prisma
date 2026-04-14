@@ -36,7 +36,7 @@ model Organization {
   auditLogs      AuditLog[]
   submissions    Submission[]
   webhooks       WebhookConfig[]
-  partnerRequest PartnerRequest?
+  accreditedPartners AccreditedPartner[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -548,31 +548,30 @@ model WebhookConfig {
   @@map("webhook_configs")
 }
 
-model PartnerRequest {
-  id           String  @id @default(cuid())
-  companyName  String
-  contactName  String
-  contactEmail String  @unique
-  website      String?
+model AccreditedPartner {
+  id String @id @default(cuid())
 
-  integrationType String
-  estimatedVolume Int?
-  useCase         String
+  externalUserId    String
+  email             String
+  externalOrgId     String
+  techProviderId    String
+  userRole          String
+  accreditationFlag Boolean
+  did               String
+  initialSecretHash String
+  externalTimestamp  DateTime
 
-  status          PartnerRequestStatus @default(PENDING)
-  reviewedBy      String?
-  reviewNotes     String?
-  rejectionReason String?
+  organizationId       String?
+  organization         Organization? @relation(fields: [organizationId], references: [id])
+  userId               String?
+  sourceOrganizationId String
 
-  organizationId String?       @unique
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @default(now())
 
-  requestedAt DateTime  @default(now())
-  reviewedAt  DateTime?
-  approvedAt  DateTime?
-
-  @@index([status])
-  @@map("partner_requests")
+  @@index([externalOrgId])
+  @@index([email])
+  @@index([sourceOrganizationId])
+  @@map("accredited_partners")
 }
 
 // =============================================================================
@@ -668,9 +667,7 @@ enum AuditAction {
   DOCUMENT_DOWNLOADED
   ACCESS_GRANTED
   ACCESS_REVOKED
-  PARTNER_REQUEST_CREATED
-  PARTNER_REQUEST_APPROVED
-  PARTNER_REQUEST_REJECTED
+  PARTNER_SYNC_RECEIVED
   WEBHOOK_TRIGGERED
   WEBHOOK_FAILED
   ORG_CREATED
@@ -717,9 +714,3 @@ enum AccessAction {
   VERIFY
 }
 
-enum PartnerRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  REVOKED
-}

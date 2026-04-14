@@ -1,0 +1,82 @@
+# =============================================================================
+# TERRAFORM VARIABLES
+# =============================================================================
+# Copy this file to terraform.tfvars and customize
+# terraform.tfvars is gitignored - your secrets won't be committed
+
+# =============================================================================
+# BASIC CONFIGURATION
+# =============================================================================
+
+aws_region   = "eu-central-1"
+environment  = "dev"
+project_name = "exchange-layer"
+
+# =============================================================================
+# NETWORKING
+# =============================================================================
+
+# Create a new VPC (recommended for isolation)
+create_new_vpc = true
+vpc_cidr       = "10.0.0.0/16"
+
+# OR use an existing VPC:
+# create_new_vpc  = false
+# existing_vpc_id = "vpc-xxxxxxxxx"
+
+availability_zones_count = 2
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+db_instance_class    = "db.t3.micro"  # Use db.t3.small or larger for prod
+db_allocated_storage = 20
+db_name              = "exchange_layer"
+db_username          = "exchange_layer_user"
+
+# =============================================================================
+# APPLICATION
+# =============================================================================
+
+container_port = 3000
+app_cpu        = 512   # 0.5 vCPU (256, 512, 1024, 2048, 4096)
+app_memory     = 1024  # 1 GB RAM
+desired_count  = 1     # Number of containers
+
+# POM+ partner org ID (enables partner:org-sync scope for this org only)
+pom_partner_org_id = ""
+
+# =============================================================================
+# OPTIONAL: BASTION HOST
+# =============================================================================
+# Enable this if you need direct SSH access to the database
+
+create_bastion = false
+
+# Add your SSH public key for bastion access:
+# bastion_authorized_keys = [
+#   "ssh-rsa AAAAB3NzaC1... your-key-here"
+# ]
+
+# =============================================================================
+# SSL/TLS CERTIFICATE
+# =============================================================================
+# Enable HTTPS with free AWS Certificate Manager (ACM) certificate
+
+# To enable HTTPS, uncomment and configure these settings:
+# enable_https = true
+# domain_name  = "api.coalition-x.com"  # Your domain name
+# certificate_validation_method = "DNS"  # DNS or EMAIL (DNS recommended)
+
+# Optional: Provide Route53 zone ID for automatic DNS validation
+# route53_zone_id = "Z1234567890ABC"
+
+# OR use an existing ACM certificate:
+# certificate_arn = "arn:aws:acm:eu-central-1:123456789012:certificate/abc123..."
+
+# Optional: Additional domains for the certificate (SANs)
+# certificate_subject_alternative_names = ["www.api.coalition-x.com"]
+
+# Optional: Custom SSL policy (default is TLS 1.3 + 1.2)
+# ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"

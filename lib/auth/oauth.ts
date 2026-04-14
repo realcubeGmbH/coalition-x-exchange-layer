@@ -122,6 +122,7 @@ export const OAUTH_SCOPES = {
   "kpis:read": "Read KPI data",
   "kpis:write": "Submit and update KPI data",
   "submissions:read": "Read submission history",
+  "partner:org-sync": "Sync accredited partner data from POM+",
 } as const;
 
 export type OAuthScope = keyof typeof OAUTH_SCOPES;

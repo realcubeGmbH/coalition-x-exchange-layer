@@ -1,48 +1,25 @@
 /**
- * Partner Request Schemas
+ * Partner Sync Schemas
+ *
+ * Zod validation for inbound accredited partner data from POM+.
  */
 
 import { z } from "zod";
 
 // =============================================================================
-// Create Partner Request (Public Application)
+// Partner Sync Request (Inbound from POM+)
 // =============================================================================
 
-export const CreatePartnerRequestSchema = z.object({
-  companyName: z.string().min(2, "Company name must be at least 2 characters"),
-  contactName: z.string().min(2, "Contact name must be at least 2 characters"),
-  contactEmail: z.string().email("Valid email is required"),
-  website: z.string().url("Must be a valid URL").optional(),
-  integrationType: z.enum(["API", "MANUAL", "HYBRID"]),
-  estimatedVolume: z.number().int().positive().optional(),
-  useCase: z.string().min(10, "Please describe your use case (min 10 characters)"),
+export const PartnerSyncSchema = z.object({
+  user_id: z.string().min(1, "user_id is required"),
+  email: z.string().email("Valid email is required"),
+  org_id: z.string().min(1, "org_id is required"),
+  tech_provider_id: z.string().min(1, "tech_provider_id is required"),
+  user_role: z.string().min(1, "user_role is required"),
+  accreditation_flag: z.enum(["Yes", "No"]),
+  did: z.string().min(1, "did is required"),
+  initial_secret: z.string().min(8, "initial_secret must be at least 8 characters"),
+  time_stamp: z.string().datetime("time_stamp must be a valid ISO 8601 datetime"),
 });
 
-export type CreatePartnerRequestInput = z.infer<typeof CreatePartnerRequestSchema>;
-
-// =============================================================================
-// Review Partner Request (Admin)
-// =============================================================================
-
-export const ReviewPartnerRequestSchema = z.object({
-  action: z.enum(["approve", "reject"]),
-  reviewNotes: z.string().optional(),
-  rejectionReason: z.string().optional(),
-}).refine(
-  (data) => !(data.action === "reject" && !data.rejectionReason),
-  { message: "Rejection reason is required when rejecting", path: ["rejectionReason"] }
-);
-
-export type ReviewPartnerRequestInput = z.infer<typeof ReviewPartnerRequestSchema>;
-
-// =============================================================================
-// List Query
-// =============================================================================
-
-export const ListPartnerRequestsQuerySchema = z.object({
-  status: z.enum(["PENDING", "APPROVED", "REJECTED", "REVOKED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-});
-
-export type ListPartnerRequestsQueryInput = z.infer<typeof ListPartnerRequestsQuerySchema>;
+export type PartnerSyncInput = z.infer<typeof PartnerSyncSchema>;

@@ -23,8 +23,8 @@ tags:
     description: Building/Asset management and KPI submissions
   - name: Submissions
     description: Submission tracking and history
-  - name: Partner Requests
-    description: Partner application management
+  - name: Partner Sync
+    description: Accredited partner data sync from POM+ (requires partner:org-sync scope)
   - name: Admin
     description: Administrative endpoints (admin only)
 
@@ -753,157 +753,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
 
   # ============================================================================
-  # Partner Requests
+  # Partner Sync
   # ============================================================================
   /api/partner-requests:
     post:
       tags:
-        - Partner Requests
-      summary: Submit partner application
-      description: Submits a new partner application (public endpoint, no auth required)
-      operationId: submitPartnerRequest
+        - Partner Sync
+      summary: Sync accredited partner
+      description: |
+        Receives accredited partner data from POM+ and automatically creates
+        an Organization (ACCREDITED_PARTNER, ACTIVE) with OAuth credentials
+        and a User linked to it. Requires the `partner:org-sync` scope.
+      operationId: syncPartner
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreatePartnerRequest'
+              $ref: '#/components/schemas/PartnerSyncRequest'
       responses:
         '201':
-          description: Application submitted
+          description: Accredited partner created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PartnerRequestCreated'
+                $ref: '#/components/schemas/PartnerSyncResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
-    get:
-      tags:
-        - Partner Requests
-      summary: List partner applications
-      description: Lists partner applications (admin only)
-      operationId: listPartnerRequests
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [PENDING, APPROVED, REJECTED]
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 20
-      responses:
-        '200':
-          description: List of applications
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  applications:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/PartnerRequest'
-                  pagination:
-                    $ref: '#/components/schemas/Pagination'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /api/partner-requests/{id}:
-    get:
-      tags:
-        - Partner Requests
-      summary: Get partner application
-      description: Retrieves details of a partner application (admin only)
-      operationId: getPartnerRequest
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Application details
+        '409':
+          description: Conflict - user with this email already exists
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  application:
-                    $ref: '#/components/schemas/PartnerRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags:
-        - Partner Requests
-      summary: Review partner application
-      description: Approves or rejects a partner application (admin only)
-      operationId: reviewPartnerRequest
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - action
-              properties:
-                action:
-                  type: string
-                  enum: [approve, reject]
-                reviewNotes:
-                  type: string
-                rejectionReason:
-                  type: string
-      responses:
-        '200':
-          description: Application reviewed
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/PartnerRequestApproved'
-                  - type: object
-                    properties:
-                      applicationId:
-                        type: string
-                      status:
-                        type: string
-                        enum: [REJECTED]
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: '#/components/schemas/Error'
 
   # ============================================================================
   # Admin
@@ -1679,113 +1567,78 @@ components:
           format: date-time
           nullable: true
 
-    # Partner Requests
-    CreatePartnerRequest:
+    # Partner Sync
+    PartnerSyncRequest:
       type: object
       required:
-        - companyName
-        - contactName
-        - contactEmail
-        - integrationType
-        - useCase
+        - user_id
+        - email
+        - org_id
+        - tech_provider_id
+        - user_role
+        - accreditation_flag
+        - did
+        - initial_secret
+        - time_stamp
       properties:
-        companyName:
+        user_id:
           type: string
-        contactName:
-          type: string
-        contactEmail:
+          description: External user identifier from POM+
+        email:
           type: string
           format: email
-        website:
+          description: User email address
+        org_id:
           type: string
-        integrationType:
+          description: External organization identifier from POM+
+        tech_provider_id:
           type: string
-          enum: [API, MANUAL, HYBRID]
-        estimatedVolume:
-          type: integer
-        useCase:
+          description: Technology provider identifier
+        user_role:
           type: string
-
-    PartnerRequest:
-      type: object
-      properties:
-        id:
+          description: User role in the partner system
+        accreditation_flag:
           type: string
-        companyName:
+          enum: [Yes, No]
+          description: Whether the partner is accredited
+        did:
           type: string
-        contactName:
+          description: Decentralized identifier
+        initial_secret:
           type: string
-        contactEmail:
-          type: string
-        website:
-          type: string
-          nullable: true
-        integrationType:
-          type: string
-        estimatedVolume:
-          type: integer
-          nullable: true
-        useCase:
-          type: string
-        status:
-          type: string
-          enum: [PENDING, APPROVED, REJECTED]
-        reviewNotes:
-          type: string
-          nullable: true
-        rejectionReason:
-          type: string
-          nullable: true
-        organizationId:
-          type: string
-          nullable: true
-        requestedAt:
+          minLength: 8
+          description: Initial secret/credential (stored hashed, never logged in plaintext)
+        time_stamp:
           type: string
           format: date-time
-        reviewedAt:
-          type: string
-          format: date-time
-          nullable: true
-        approvedAt:
-          type: string
-          format: date-time
-          nullable: true
+          description: Timestamp of the sync event (ISO 8601)
 
-    PartnerRequestCreated:
+    PartnerSyncResponse:
       type: object
       properties:
-        applicationId:
+        syncId:
           type: string
-        status:
-          type: string
-          enum: [PENDING]
-        message:
-          type: string
-
-    PartnerRequestApproved:
-      type: object
-      properties:
-        applicationId:
-          type: string
-        status:
-          type: string
-          enum: [APPROVED]
+          description: ID of the stored sync record
         organization:
           type: object
           properties:
             id:
               type: string
-            clientId:
-              type: string
             name:
+              type: string
+            clientId:
               type: string
         credentials:
           type: object
+          description: OAuth credentials for the newly created organization (shown once)
           properties:
             clientId:
               type: string
             clientSecret:
               type: string
+        userId:
+          type: string
+          description: ID of the created user
         message:
           type: string
 
