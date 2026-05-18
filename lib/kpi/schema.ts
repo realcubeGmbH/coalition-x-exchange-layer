@@ -1,553 +1,248 @@
-/**
- * KPI Validation Schema
- * Based on CoalitionX_BasicListOfKPIs_Flat.JSON (21 Basic KPIs)
- * Extended with KPIs 2-1, 2-2, 8-2, 8-3, 9-3 to 9-6
- *
- * Supports multiple input formats per Connector 1 AC3:
- * - API format: { "kpi_1-1": "2025-10-15" }
- * - Number format: { "1-1": "2025-10-15" }
- * - Internal format: { "Building_Permit_...": "2025-10-15" }
- *
- * Schema Version: 2.0
- */
-
 import { z } from "zod";
-import { normalizeKpiInput } from "./normalizer";
 
 // =============================================================================
-// Enums matching the database schema
+// Source Enums (per V0.9.0 JSON schema)
 // =============================================================================
 
-export const BuildingUseTypeEnum = z.enum([
-  "RESIDENTIAL",
-  "RETAIL",
-  "OFFICE",
-  "HOTEL_ACCOMMODATION_GASTRONOMY",
-  "HEALTHCARE_SOCIAL",
-  "INDUSTRIAL_LOGISTICS",
-  "INFRASTRUCTURE",
-  "RECREATION_CULTURE_EDUCATION",
-  "MIXED_USE",
-  "OTHER",
+export const KpiSourceSchema = z.enum(["input", "computed", "evaluated"]);
+export type KpiSource = z.infer<typeof KpiSourceSchema>;
+
+export const EnergyClassSourceSchema = z.enum([
+  "Energieausweis",
+  "FraunhoferMethode",
+  "BVI",
+  "andere",
+]);
+export type EnergyClassSource = z.infer<typeof EnergyClassSourceSchema>;
+
+// =============================================================================
+// Value Enums
+// =============================================================================
+
+export const BuildingUseEnum = z.enum([
+  "Wohnen",
+  "Handel",
+  "Büro",
+  "Hotel",
+  "Beherbergung und Gastronomie",
+  "Gesundheit und Soziales",
+  "Industrie und Logistik",
+  "Infrastruktur (Energie/Wasser, Kommunikation, Verkehr)",
+  "Freizeit",
+  "Kultur und Bildung",
+  "Mixed-Use",
+  "Andere",
 ]);
 
-export const ActivityInValueChainEnum = z.enum([
-  "CONSTRUCTION", // New Building
-  "EXISTING_BUILDING", // Existing
-  "RENOVATION", // Renovation
-  "DEMOLITION", // Demolition
-]);
-
-export const TaxonomyAlignmentEnum = z.enum([
-  "YES_CA", // Climate Adaptation
-  "YES_CE", // Circular Economy
-  "YES_CM", // Climate Mitigation
-  "NO",
-]);
-
-export const EPCTypeEnum = z.enum([
-  "CONSUMPTION_BASED",
-  "DEMAND_BASED",
-  "NO_OBLIGATION",
-  "NON_EXISTENT",
-]);
-
-export const HeatingMediumEnum = z.enum([
-  "DISTRICT_HEATING",
-  "GAS",
-  "OIL",
-  "ELECTRICITY",
-  "HEAT_PUMP",
-  "HYBRID",
-]);
-
-export const BuildingCategoryEnum = z.enum(["RESIDENTIAL", "NON_RESIDENTIAL"]);
-
-export const FossilFuelsBasisEnum = z.enum([
-  "BY_NET_BASE_RENT",
-  "BY_REAL_ESTATE_VALUE",
+export const EnergyClassEnum = z.enum([
+  "A+",
+  "A",
+  "B",
+  "C",
+  "D",
+  "E",
+  "F",
+  "G",
+  "Unbekannt",
 ]);
 
 // =============================================================================
-// Field name mappings: Flat JSON → Database
+// KPIValueElement — scalar KPIs (self-referential History per V0.9.0 schema)
 // =============================================================================
 
-export const FLAT_TO_DB_MAPPING = {
-  // Context fields (not KPIs, but needed for validation)
-  activity_in_value_chain: "propertyData.activityInValueChain",
-  building_category: "propertyData.buildingCategory",
+export type KPIValueElement = {
+  Value: string | number | boolean;
+  SubmittedBy: string;
+  SubmittetedAt: string;
+  Secret: string;
+  AdditionalInformation?: string;
+  Source?: KpiSource;
+  History?: KPIValueElement[];
+};
 
-  // KPI 1: Building Permit
-  Building_Permit_Date_Of_Building_Permit_Application:
-    "propertyData.dateBuildingPermitApplication",
-  Building_Permit_Year_Of_Construction: "propertyData.yearOfConstruction",
-
-  // KPI 2: Renovation (Extended)
-  Renovation_Year_Of_Last_Energy_Renovation:
-    "renovationHistory.yearOfLastRenovation",
-  Renovation_Type_Of_Last_Energy_Renovation:
-    "renovationHistory.typeOfLastRenovation",
-
-  // KPI 3: Building Use Type
-  Building_Use_Type_Primary_Use_Of_Building:
-    "propertyData.primaryUseOfBuilding",
-
-  // KPI 4: Fossil Fuels
-  Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels:
-    "propertyData.usageForFossilFuels",
-  Use_For_Fossil_Fuels_Basis: "propertyData.fossilFuelsBasis",
-
-  // KPI 5: Surface Measures
-  Surface_Measure_Usable_Area_heated_Or_Cooled: "propertyData.usableAreaHeated",
-  Surface_Measure_Useful_Internal_Floor_Area_heated_Or_Cooled:
-    "propertyData.netFloorAreaHeated",
-  Surface_Measure_Gross_External_Area_IPMS_1:
-    "propertyData.grossExternalAreaIPMS1",
-  Surface_Measure_Total_Gross_Internal_Area_IPMS_2:
-    "propertyData.totalGrossInternalAreaIPMS2",
-  Surface_Measure_Rental_Area: "propertyData.rentalArea",
-
-  // KPI 6: Taxonomy Alignment
-  Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned:
-    "propertyData.taxonomyAlignment",
-
-  // KPI 7: Energy Performance Certificate
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC:
-    "energyPerformance.epcFile",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class:
-    "energyPerformance.epcClass",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption:
-    "energyPerformance.epcPrimaryEnergyConsumption",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand:
-    "energyPerformance.epcPrimaryEnergyDemand",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption:
-    "energyPerformance.epcEndEnergyConsumption",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand:
-    "energyPerformance.epcEndEnergyDemand",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date:
-    "energyPerformance.epcExpiryDate",
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type:
-    "energyPerformance.epcType",
-
-  // KPI 8: Energy Consumption
-  Energy_Consumption_Heating_Medium: "energyConsumption.heatingMedium",
-  Energy_Consumption_End_Energy_Consumption_Actual:
-    "energyConsumption.endEnergyConsumptionActual",
-  Energy_Consumption_End_Energy_Consumption_Table:
-    "energyConsumption.endEnergyConsumptionTable",
-
-  // KPI 9: GHG Emissions
-  GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset:
-    "greenhouseGases.directGHGEmissions",
-  GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset:
-    "greenhouseGases.indirectGHGEmissionsFromEnergy",
-  GHG_Emissions_Other_Indirect_GHG_Emissions:
-    "greenhouseGases.otherIndirectGHGEmissions",
-  GHG_Emissions_Estimated_Emissions_Percentage:
-    "greenhouseGases.estimatedEmissionsPercentage",
-  GHG_Emissions_Market_Or_Location_Based:
-    "greenhouseGases.marketOrLocationBased",
-  GHG_Emissions_Provider_Specific_Emission_Factor:
-    "greenhouseGases.providerSpecificEmissionFactor",
-} as const;
+export const KPIValueElementSchema: z.ZodType<KPIValueElement> = z.lazy(() =>
+  z.object({
+    Value: z.union([z.string(), z.number(), z.boolean()]),
+    SubmittedBy: z.string(),
+    SubmittetedAt: z.string().datetime(),
+    Secret: z.string(),
+    AdditionalInformation: z.string().optional(),
+    Source: KpiSourceSchema.optional(),
+    History: z.array(KPIValueElementSchema).optional(),
+  }),
+);
 
 // =============================================================================
-// KPI Number to Field Name Mapping (for kpi_X-X format)
+// KPIValueList — array KPIs (self-referential History per V0.9.0 schema)
 // =============================================================================
 
-export const KPI_NUMBER_TO_FIELD = {
-  // KPI 1: Building Permit
-  "1-1": "Building_Permit_Date_Of_Building_Permit_Application",
-  "1-2": "Building_Permit_Year_Of_Construction",
+export type KPIValueList = {
+  Values: Array<string | number | boolean>;
+  SubmittedBy: string;
+  SubmittetedAt: string;
+  Secret: string;
+  AdditionalInformation?: string;
+  Source?: KpiSource;
+  History?: KPIValueList[];
+};
 
-  // KPI 2: Renovation (Extended)
-  "2-1": "Renovation_Year_Of_Last_Energy_Renovation",
-  "2-2": "Renovation_Type_Of_Last_Energy_Renovation",
-
-  // KPI 3: Building Use Type
-  "3-1": "Building_Use_Type_Primary_Use_Of_Building",
-
-  // KPI 4: Fossil Fuels
-  "4-1":
-    "Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels",
-
-  // KPI 5: Surface Measures
-  "5-1": "Surface_Measure_Usable_Area_heated_Or_Cooled",
-  "5-2": "Surface_Measure_Useful_Internal_Floor_Area_heated_Or_Cooled",
-  "5-3": "Surface_Measure_Gross_External_Area_IPMS_1",
-  "5-4": "Surface_Measure_Total_Gross_Internal_Area_IPMS_2",
-  "5-5": "Surface_Measure_Rental_Area",
-
-  // KPI 6: Taxonomy Alignment
-  "6-1": "Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned",
-
-  // KPI 7: Energy Performance Certificate
-  "7-1":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC",
-  "7-2":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class",
-  "7-3":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption",
-  "7-4":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand",
-  "7-5":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption",
-  "7-6":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand",
-  "7-7":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date",
-  "7-8":
-    "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type",
-
-  // KPI 8: Energy Consumption
-  "8-1": "Energy_Consumption_Heating_Medium",
-  "8-2": "Energy_Consumption_End_Energy_Consumption_Actual",
-  "8-3": "Energy_Consumption_End_Energy_Consumption_Table",
-
-  // KPI 9: GHG Emissions
-  "9-1": "GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset",
-  "9-2":
-    "GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset",
-  "9-3": "GHG_Emissions_Other_Indirect_GHG_Emissions",
-  "9-4": "GHG_Emissions_Estimated_Emissions_Percentage",
-  "9-5": "GHG_Emissions_Market_Or_Location_Based",
-  "9-6": "GHG_Emissions_Provider_Specific_Emission_Factor",
-} as const;
-
-/** Reverse mapping: Field name to KPI number */
-export const FIELD_TO_KPI_NUMBER = Object.fromEntries(
-  Object.entries(KPI_NUMBER_TO_FIELD).map(([k, v]) => [v, k])
-) as Record<string, string>;
+export const KPIValueListSchema: z.ZodType<KPIValueList> = z.lazy(() =>
+  z.object({
+    Values: z.array(z.union([z.string(), z.number(), z.boolean()])),
+    SubmittedBy: z.string(),
+    SubmittetedAt: z.string().datetime(),
+    Secret: z.string(),
+    AdditionalInformation: z.string().optional(),
+    Source: KpiSourceSchema.optional(),
+    History: z.array(KPIValueListSchema).optional(),
+  }),
+);
 
 // =============================================================================
-// Base Flat KPI Schema (all fields optional for partial submissions)
+// KPIValueElementUseofBuilding — KPI 3-1 (enum-restricted Value)
 // =============================================================================
 
-export const FlatKpiSchema = z.object({
-  // Schema version for compatibility tracking
-  schema_version: z.string().default("1.0"),
+export type KPIValueElementUseofBuilding = {
+  Value: z.infer<typeof BuildingUseEnum>;
+  SubmittedBy: string;
+  SubmittetedAt: string;
+  Secret: string;
+  AdditionalInformation?: string;
+  Source?: KpiSource;
+  History?: KPIValueElementUseofBuilding[];
+};
 
-  // Context fields (determines validation rules)
-  activity_in_value_chain: ActivityInValueChainEnum.optional(),
-  building_category: BuildingCategoryEnum.optional(),
+export const KPIValueElementUseofBuildingSchema: z.ZodType<KPIValueElementUseofBuilding> =
+  z.lazy(() =>
+    z.object({
+      Value: BuildingUseEnum,
+      SubmittedBy: z.string(),
+      SubmittetedAt: z.string().datetime(),
+      Secret: z.string(),
+      AdditionalInformation: z.string().optional(),
+      Source: KpiSourceSchema.optional(),
+      History: z.array(KPIValueElementUseofBuildingSchema).optional(),
+    }),
+  );
 
-  // KPI 1-1: Date of building permit application (date)
-  Building_Permit_Date_Of_Building_Permit_Application: z
-    .string()
-    .refine((val) => !val || !isNaN(Date.parse(val)), {
-      message: "Invalid date format. Use ISO 8601 (YYYY-MM-DD)",
-    })
-    .optional(),
+// =============================================================================
+// KPIValueElementEnergyClass — KPI 7-2 (enum Value + required Source)
+// =============================================================================
 
-  // KPI 1-2: Year of construction (year as number or string)
-  Building_Permit_Year_Of_Construction: z
-    .union([
-      z.number().int().min(1800).max(2100),
-      z
-        .string()
-        .regex(/^\d{4}$/)
-        .transform(Number),
-    ])
-    .optional(),
+export type KPIValueElementEnergyClass = {
+  Value: z.infer<typeof EnergyClassEnum>;
+  SubmittedBy: string;
+  SubmittetedAt: string;
+  Secret: string;
+  AdditionalInformation?: string;
+  Source: EnergyClassSource;
+  History?: KPIValueElementEnergyClass[];
+};
 
-  // KPI 3-1: Primary use of building
-  Building_Use_Type_Primary_Use_Of_Building: BuildingUseTypeEnum.optional(),
+export const KPIValueElementEnergyClassSchema: z.ZodType<KPIValueElementEnergyClass> =
+  z.lazy(() =>
+    z.object({
+      Value: EnergyClassEnum,
+      SubmittedBy: z.string(),
+      SubmittetedAt: z.string().datetime(),
+      Secret: z.string(),
+      AdditionalInformation: z.string().optional(),
+      Source: EnergyClassSourceSchema,
+      History: z.array(KPIValueElementEnergyClassSchema).optional(),
+    }),
+  );
 
-  // KPI 4-1: Usage for fossil fuels (percentage)
-  Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels:
-    z
-      .union([
-        z.number().min(0).max(100),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
+// =============================================================================
+// Section Schemas (all fields optional — partial submissions)
+// =============================================================================
 
-  // KPI 4-1 basis
-  Use_For_Fossil_Fuels_Basis: FossilFuelsBasisEnum.optional(),
-
-  // KPI 5-1: Usable area heated or cooled (m²)
-  Surface_Measure_Usable_Area_heated_Or_Cooled: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 5-2: Useful internal floor area (m²)
-  Surface_Measure_Useful_Internal_Floor_Area_heated_Or_Cooled: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 5-3: Gross external area IPMS 1 (m²)
-  Surface_Measure_Gross_External_Area_IPMS_1: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 5-4: Total gross internal area IPMS 2 (m²)
-  Surface_Measure_Total_Gross_Internal_Area_IPMS_2: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 5-5: Rental area (m²)
-  Surface_Measure_Rental_Area: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 6-1: Taxonomy alignment
-  Taxonomy_Alignment_Object_Activity_Is_Taxonomy_Aligned:
-    TaxonomyAlignmentEnum.optional(),
-
-  // KPI 7-1: EPC file (URL or base64)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC: z
-    .string()
-    .optional(),
-
-  // KPI 7-2: EPC Class (A+, A, B, C, D, E, F, G, H)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class: z
-    .string()
-    .regex(/^[A-H]\+?$/, {
-      message: "Invalid EPC class. Use A+, A, B, C, D, E, F, G, or H",
-    })
-    .optional(),
-
-  // KPI 7-3: Primary energy consumption (kWh/m²a)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption:
-    z
-      .union([
-        z.number().min(0),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
-
-  // KPI 7-4: Primary energy demand (kWh/m²a)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand:
-    z
-      .union([
-        z.number().min(0),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
-
-  // KPI 7-5: End energy consumption (kWh/m²a)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption:
-    z
-      .union([
-        z.number().min(0),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
-
-  // KPI 7-6: End energy demand (kWh/m²a)
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand:
-    z
-      .union([
-        z.number().min(0),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
-
-  // KPI 7-7: EPC expiry date
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date:
-    z
-      .string()
-      .refine((val) => !val || !isNaN(Date.parse(val)), {
-        message: "Invalid date format. Use ISO 8601 (YYYY-MM-DD)",
-      })
-      .optional(),
-
-  // KPI 7-8: EPC Type
-  Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type:
-    EPCTypeEnum.optional(),
-
-  // KPI 8-1: Heating medium
-  Energy_Consumption_Heating_Medium: HeatingMediumEnum.optional(),
-
-  // KPI 8 optional: Year for consumption data
-  Energy_Consumption_Year: z.number().int().min(2000).max(2100).optional(),
-
-  // KPI 9-1: Direct GHG emissions (t CO2e p.a.)
-  GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 9-2: Indirect GHG emissions from energy (t CO2e p.a.)
-  GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset:
-    z
-      .union([
-        z.number().min(0),
-        z.string().transform((val) => parseFloat(val)),
-      ])
-      .optional(),
-
-  // KPI 9 optional: Year for GHG data
-  GHG_Emissions_Year: z.number().int().min(2000).max(2100).optional(),
-
-  // =========================================================================
-  // Extended KPIs (KPI 2: Renovation)
-  // =========================================================================
-
-  // KPI 2-1: Year of last energy renovation
-  Renovation_Year_Of_Last_Energy_Renovation: z
-    .union([
-      z.number().int().min(1900).max(2100),
-      z
-        .string()
-        .regex(/^\d{4}$/)
-        .transform(Number),
-    ])
-    .optional(),
-
-  // KPI 2-2: Type of last energy renovation
-  Renovation_Type_Of_Last_Energy_Renovation: z.string().optional(),
-
-  // =========================================================================
-  // Extended KPIs (KPI 8: Energy Consumption - Actual Values)
-  // =========================================================================
-
-  // KPI 8-2: End energy consumption actual value (kWh/m²a)
-  Energy_Consumption_End_Energy_Consumption_Actual: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 8-3: End energy consumption table (JSON string or object)
-  Energy_Consumption_End_Energy_Consumption_Table: z
-    .union([z.string(), z.record(z.string(), z.unknown())])
-    .optional(),
-
-  // =========================================================================
-  // Extended KPIs (KPI 9: Additional GHG Emissions)
-  // =========================================================================
-
-  // KPI 9-3: Other indirect GHG emissions (t CO2e p.a.)
-  GHG_Emissions_Other_Indirect_GHG_Emissions: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
-
-  // KPI 9-4: Percentage of estimated GHG emissions (%)
-  GHG_Emissions_Estimated_Emissions_Percentage: z
-    .union([
-      z.number().min(0).max(100),
-      z.string().transform((val) => parseFloat(val)),
-    ])
-    .optional(),
-
-  // KPI 9-5: Indirect GHG emissions market or location based
-  GHG_Emissions_Market_Or_Location_Based: z
-    .enum(["MARKET_BASED", "LOCATION_BASED"])
-    .optional(),
-
-  // KPI 9-6: Provider-specific emission factor (kg CO2e/kWh)
-  GHG_Emissions_Provider_Specific_Emission_Factor: z
-    .union([z.number().min(0), z.string().transform((val) => parseFloat(val))])
-    .optional(),
+export const PropertyRelatedDataSchema = z.object({
+  KPI_1_1_Date_Of_Building_Permit: KPIValueElementSchema.optional(),
+  KPI_1_2_Building_Completion_Year: KPIValueElementSchema.optional(),
+  KPI_2_1_YearOfLastRetrofit: KPIValueListSchema.optional(),
+  KPI_2_2_TypeOfLastRetrofit: KPIValueListSchema.optional(),
+  KPI_3_1_Main_Use_Of_Building:
+    KPIValueElementUseofBuildingSchema.optional(),
+  KPI_4_1_Usage_Of_Fossil_Fuels: KPIValueElementSchema.optional(),
+  KPI_5_1_Usage_Area_ThermalyConditioned_Residential:
+    KPIValueElementSchema.optional(),
+  KPI_5_2_NetFloorArea_ThermalyConditioned_NonResidential:
+    KPIValueElementSchema.optional(),
+  KPI_5_3_GrossExternalArea: KPIValueElementSchema.optional(),
+  KPI_5_4_GrossInternalArea: KPIValueElementSchema.optional(),
+  KPI_5_5_Rental_Area: KPIValueElementSchema.optional(),
+  KPI_6_1_Object_Is_Taxonomy_Aligned: KPIValueElementSchema.optional(),
 });
 
-export type FlatKpiInput = z.infer<typeof FlatKpiSchema>;
-
-// =============================================================================
-// Batch submission schema
-// =============================================================================
-
-export const BatchKpiSubmissionSchema = z.object({
-  schema_version: z.string().default("1.0"),
-  buildings: z
-    .array(
-      z.object({
-        external_id: z
-          .string()
-          .min(1, "external_id is required for batch submissions"),
-        kpis: FlatKpiSchema,
-      })
-    )
-    .min(1)
-    .max(100, "Maximum 100 buildings per batch"),
+export const EnergyPerformanceSchema = z.object({
+  KPI_7_1_Energy_Performance_Certificate: KPIValueElementSchema.optional(),
+  KPI_7_2_Energy_Class: KPIValueElementEnergyClassSchema.optional(),
+  KPI_7_3_Primary_Energy_Metered: KPIValueElementSchema.optional(),
+  KPI_7_4_Primary_Energy_Calculated: KPIValueElementSchema.optional(),
+  KPI_7_5_Delivered_Energy_Metered: KPIValueElementSchema.optional(),
+  KPI_7_6_Delivered_Energy_Calculated: KPIValueElementSchema.optional(),
+  KPI_7_7_EPC_Expiry_Date: KPIValueElementSchema.optional(),
+  KPI_7_8_EPC_Type: KPIValueElementSchema.optional(),
 });
 
-export type BatchKpiSubmissionInput = z.infer<typeof BatchKpiSubmissionSchema>;
-
-// =============================================================================
-// Single building submission schema (with optional building metadata)
-// =============================================================================
-
-export const SingleKpiSubmissionSchema = z.object({
-  schema_version: z.string().default("1.0"),
-  building_id: z.string().optional(), // Existing building ID
-  external_id: z.string().optional(), // Partner's external ID
-  name: z.string().optional(),
-  address: z.string().optional(),
-  kpis: FlatKpiSchema,
+export const EnergyConsumptionSchema = z.object({
+  KPI_8_1_EnergyCarriersForHeating: KPIValueListSchema.optional(),
+  KPI_8_2_MeteredEnergyConsumption: KPIValueListSchema.optional(),
+  KPI_8_3_MeteredEnergyConsumptionAsTable: KPIValueListSchema.optional(),
 });
 
-export type SingleKpiSubmissionInput = z.infer<
-  typeof SingleKpiSubmissionSchema
->;
+export const GreenhouseGasesSchema = z.object({
+  KPI_9_1_DirectEmissions: KPIValueListSchema.optional(),
+  KPI_9_2_IndirectEmissions: KPIValueListSchema.optional(),
+  KPI_9_3_OtherIndirectEmissions: KPIValueListSchema.optional(),
+  KPI_9_4_ShareOfEstimatedEmissions: KPIValueElementSchema.optional(),
+  KPI_9_5_AreIndirectEmissionsBasedOnMarketOrOnLocation:
+    KPIValueElementSchema.optional(),
+  KPI_9_6_CO2EmissionsFactorPerCarrier: KPIValueListSchema.optional(),
+});
 
-// Schema version constant
-export const SCHEMA_VERSION = "2.0";
+export const ExtendedDataSchema = z.object({
+  MaximumPrimaryEnergyDemand_Metered: z.number().optional(),
+  MaximumPrimaryEnergyDemand_Calculated: z.number().optional(),
+});
+
+export const MetaDataSchema = z.object({
+  LocalAssetID: z.string().optional(),
+  BuildingName: z.string().optional(),
+  BuildingPart: z.string().optional(),
+  BuildingStreet: z.string().optional(),
+  BuildingNumber: z.string().optional(),
+  BuildingPostcode: z.string().optional(),
+  BuildingCity: z.string().optional(),
+  BuildingState: z.string().optional(),
+  BuildingCountry: z.string().optional(),
+});
 
 // =============================================================================
-// API Format Schema (accepts kpi_X-X format)
+// Root Schema (V0.9.0 — all fields optional for partial submissions)
 // =============================================================================
 
-/**
- * Preprocess and validate KPI input that may be in API format (kpi_1-1).
- * Normalizes to internal field names before validation.
- *
- * @example
- * const result = parseKpiInput({ "kpi_1-1": "2025-10-15", "kpi_3-1": "OFFICE" });
- * // Returns normalized FlatKpiInput
- */
-export function parseKpiInput(input: Record<string, unknown>):
-  | {
-      success: true;
-      data: FlatKpiInput;
-    }
-  | {
-      success: false;
-      error: z.ZodError;
-      unknownFields?: string[];
-    } {
-  // First normalize the input to internal field names
-  const normalization = normalizeKpiInput(input, {
-    includeUnknownFields: false,
-  });
+export const KpiDataSchema = z.object({
+  AssetID: z.string().optional(),
+  MetaData: MetaDataSchema.optional(),
+  Property_Related_Data: PropertyRelatedDataSchema.optional(),
+  Energy_Performance: EnergyPerformanceSchema.optional(),
+  Energy_Consumption: EnergyConsumptionSchema.optional(),
+  Greenhouse_Gases: GreenhouseGasesSchema.optional(),
+  Extended_Data: ExtendedDataSchema.optional(),
+});
 
-  // Add warnings about unknown fields
-  const unknownFields =
-    normalization.unknownFields.length > 0
-      ? normalization.unknownFields
-      : undefined;
+export type KpiData = z.infer<typeof KpiDataSchema>;
 
-  // Then validate with Zod schema
-  const result = FlatKpiSchema.safeParse(normalization.data);
+// =============================================================================
+// V0.9.0 Section names (for iteration)
+// =============================================================================
 
-  if (result.success) {
-    return { success: true, data: result.data };
-  }
+export const KPI_SECTIONS = [
+  "Property_Related_Data",
+  "Energy_Performance",
+  "Energy_Consumption",
+  "Greenhouse_Gases",
+] as const;
 
-  return { success: false, error: result.error, unknownFields };
-}
-
-/**
- * Single KPI submission with API format support
- */
-export const ApiKpiSubmissionSchema = z
-  .object({
-    schema_version: z.string().default("2.0"),
-    building_id: z.string().optional(),
-    external_id: z.string().optional(),
-    name: z.string().optional(),
-    address: z.string().optional(),
-    // Accept any keys (will be normalized)
-    kpis: z.record(z.string(), z.unknown()),
-  })
-  .transform((data) => {
-    const normalization = normalizeKpiInput(
-      data.kpis as Record<string, unknown>
-    );
-    return {
-      ...data,
-      kpis: normalization.data,
-      _unknownFields: normalization.unknownFields,
-      _mappedFields: normalization.mappedFields,
-    };
-  });
-
-export type ApiKpiSubmissionInput = z.infer<typeof ApiKpiSubmissionSchema>;
+export type KpiSectionName = (typeof KPI_SECTIONS)[number];

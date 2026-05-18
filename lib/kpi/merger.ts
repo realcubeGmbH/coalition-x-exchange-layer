@@ -1,0 +1,202 @@
+import type {
+  KPIValueElement,
+  KPIValueList,
+  KpiData,
+  KpiSectionName,
+} from "./schema";
+import { KPI_SECTIONS } from "./schema";
+import { SCHEMA_KEY_MAP } from "./registry";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface MergeContext {
+  submittedBy: string;
+}
+
+export interface MergeResult {
+  merged: KpiData;
+  changedKpis: string[];
+  addedKpis: string[];
+  unchangedKpis: string[];
+  conflictedKpis: string[];
+}
+
+type KpiElement = KPIValueElement | KPIValueList;
+type SectionData = Record<string, KpiElement>;
+
+// =============================================================================
+// Main Merge Function
+// =============================================================================
+
+export function mergeKpiData(
+  existing: KpiData | null,
+  incoming: KpiData,
+  context: MergeContext,
+): MergeResult {
+  if (!existing) {
+    const allKeys = getAllKpiKeys(incoming);
+    return {
+      merged: incoming,
+      changedKpis: [],
+      addedKpis: allKeys,
+      unchangedKpis: [],
+      conflictedKpis: [],
+    };
+  }
+
+  const result = structuredClone(existing);
+  const changed: string[] = [];
+  const added: string[] = [];
+  const conflicted: string[] = [];
+
+  for (const section of KPI_SECTIONS) {
+    const incomingSection = (
+      incoming as Record<string, SectionData | undefined>
+    )[section];
+    if (!incomingSection) continue;
+
+    const resultSection =
+      ((result as Record<string, SectionData | undefined>)[section] as
+        | SectionData
+        | undefined) ?? {};
+    (result as Record<string, SectionData>)[section] = resultSection;
+
+    for (const [kpiKey, newElement] of Object.entries(incomingSection)) {
+      const qualifiedKey = `${section}.${kpiKey}`;
+      const existingElement = resultSection[kpiKey];
+
+      if (existingElement) {
+        if (isConflict(existingElement, newElement)) {
+          conflicted.push(qualifiedKey);
+        }
+
+        const def = SCHEMA_KEY_MAP.get(kpiKey);
+        if (def?.elementType === "KPIValueList") {
+          mergeValueList(
+            existingElement as KPIValueList,
+            newElement as KPIValueList,
+          );
+        } else {
+          mergeValueElement(
+            existingElement as KPIValueElement,
+            newElement as KPIValueElement,
+          );
+        }
+
+        resultSection[kpiKey] = newElement;
+        changed.push(qualifiedKey);
+      } else {
+        resultSection[kpiKey] = newElement;
+        added.push(qualifiedKey);
+      }
+    }
+  }
+
+  const allExistingKeys = getAllKpiKeys(existing);
+  const unchanged = allExistingKeys.filter(
+    (k) => !changed.includes(k) && !added.includes(k),
+  );
+
+  return {
+    merged: result,
+    changedKpis: changed,
+    addedKpis: added,
+    unchangedKpis: unchanged,
+    conflictedKpis: conflicted,
+  };
+}
+
+// =============================================================================
+// Element-level merge (push old to History)
+// =============================================================================
+
+function mergeValueElement(
+  existing: KPIValueElement,
+  incoming: KPIValueElement,
+): void {
+  const historicalEntry = stripHistoryElement(existing);
+  incoming.History = [historicalEntry, ...(existing.History ?? [])];
+}
+
+function mergeValueList(existing: KPIValueList, incoming: KPIValueList): void {
+  const historicalEntry = stripHistoryList(existing);
+  incoming.History = [historicalEntry, ...(existing.History ?? [])];
+}
+
+// =============================================================================
+// Strip History (prevent recursive nesting)
+// =============================================================================
+
+function stripHistoryElement(element: KPIValueElement): KPIValueElement {
+  const { History: _, ...rest } = element;
+  return { ...rest, History: [] };
+}
+
+function stripHistoryList(element: KPIValueList): KPIValueList {
+  const { History: _, ...rest } = element;
+  return { ...rest, History: [] };
+}
+
+// =============================================================================
+// Conflict Detection
+// =============================================================================
+
+function isConflict(existing: KpiElement, incoming: KpiElement): boolean {
+  return (
+    existing.SubmittedBy !== incoming.SubmittedBy &&
+    existing.Source === "input" &&
+    incoming.Source === "input"
+  );
+}
+
+// =============================================================================
+// Completeness Evaluation
+// =============================================================================
+
+export function evaluateCompleteness(data: KpiData): {
+  isComplete: boolean;
+  presentKpis: string[];
+  missingRequiredSections: KpiSectionName[];
+} {
+  const presentKpis = getAllKpiKeys(data);
+
+  const requiredSections: KpiSectionName[] = [
+    "Property_Related_Data",
+    "Energy_Performance",
+    "Energy_Consumption",
+    "Greenhouse_Gases",
+  ];
+
+  const missingRequiredSections = requiredSections.filter((section) => {
+    const sectionData = (data as Record<string, SectionData | undefined>)[
+      section
+    ];
+    return !sectionData || Object.keys(sectionData).length === 0;
+  });
+
+  return {
+    isComplete: missingRequiredSections.length === 0,
+    presentKpis,
+    missingRequiredSections,
+  };
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function getAllKpiKeys(data: KpiData): string[] {
+  const keys: string[] = [];
+  for (const section of KPI_SECTIONS) {
+    const sectionData = (data as Record<string, SectionData | undefined>)[
+      section
+    ];
+    if (!sectionData) continue;
+    for (const kpiKey of Object.keys(sectionData)) {
+      keys.push(`${section}.${kpiKey}`);
+    }
+  }
+  return keys;
+}

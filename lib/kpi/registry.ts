@@ -12,6 +12,11 @@
  * - CoalitionX_Vollständigkeit_KPIListe document (Extended KPIs)
  */
 
+import {
+  getMandatorySchemaKeys,
+  type BuildingScenario,
+} from "./scenarios";
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -42,6 +47,14 @@ export interface KpiRelevance {
   residential: boolean;
   nonResidential: boolean;
 }
+
+export type KpiElementType = "KPIValueElement" | "KPIValueList";
+
+export type KpiSection =
+  | "Property_Related_Data"
+  | "Energy_Performance"
+  | "Energy_Consumption"
+  | "Greenhouse_Gases";
 
 export interface KpiDefinition {
   /** KPI number (e.g., "1-1") */
@@ -94,6 +107,15 @@ export interface KpiDefinition {
     banking?: string;
     din?: string;
   };
+
+  /** Element type: scalar or array */
+  elementType: KpiElementType;
+
+  /** Schema key name (e.g., "KPI_1_1_Date_Of_Building_Permit") */
+  schemaKey: string;
+
+  /** Schema section (e.g., "Property_Related_Data") */
+  schemaSection: KpiSection;
 }
 
 // =============================================================================
@@ -130,6 +152,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       sfdr: "PAI 18",
       din: "SD.ODA.004",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_1_1_Date_Of_Building_Permit",
+    schemaSection: "Property_Related_Data",
   },
 
   "1-2": {
@@ -155,6 +180,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.ODA.003",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_1_2_Building_Completion_Year",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -180,6 +208,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_2_1_YearOfLastRetrofit",
+    schemaSection: "Property_Related_Data",
   },
 
   "2-2": {
@@ -202,6 +233,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_2_2_TypeOfLastRetrofit",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -240,10 +274,14 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       "OTHER",
     ],
     regulations: {
-      taxonomy: "CA 7.7 DNSH / CM 7.1 DNSH / CM 7.1 SC / CM 7.2 DNSH / CM 7.7 SC",
+      taxonomy:
+        "CA 7.7 DNSH / CM 7.1 DNSH / CM 7.1 SC / CM 7.2 DNSH / CM 7.7 SC",
       banking: "Basel, EBA",
       din: "SD.GEN.001",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_3_1_Main_Use_Of_Building",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -252,15 +290,18 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
   "4-1": {
     number: "4-1",
     apiKey: "kpi_4-1",
-    fieldName: "Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels",
+    fieldName:
+      "Use_For_Fossil_Fuels_Usage_For_Extraction_Storage_Transport_Or_Manufacture_Of_Fossil_Fuels",
     type: "BASIC",
     domain: "PROPERTY",
     dataType: "percentage",
     unit: "% of net target rent",
     nameEN: "Use for fossil fuels",
     nameDE: "Verwendung für fossile Brennstoffe",
-    dataPointEN: "Usage for extraction, storage, transport or manufacture of fossil fuels",
-    dataPointDE: "Nutzung für Gewinnung, Lagerung, Beförderung oder Herstellung fossiler Brennstoffe",
+    dataPointEN:
+      "Usage for extraction, storage, transport or manufacture of fossil fuels",
+    dataPointDE:
+      "Nutzung für Gewinnung, Lagerung, Beförderung oder Herstellung fossiler Brennstoffe",
     relevance: {
       newBuildings: true,
       existingBuildings: true,
@@ -273,6 +314,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       taxonomy: "CA 7.1-7.7 DNSH",
       sfdr: "PAI 17",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_4_1_Usage_Of_Fossil_Fuels",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -299,11 +343,15 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       nonResidential: false,
     },
     regulations: {
-      taxonomy: "CA 7.1 DNSH / CA 7.7 DNSH / CE 3.1 SC / CE 3.2 SC / CM 7.1 SC / CM 7.2 SC",
+      taxonomy:
+        "CA 7.1 DNSH / CA 7.7 DNSH / CE 3.1 SC / CE 3.2 SC / CM 7.1 SC / CM 7.2 SC",
       sfdr: "PAI 18+19",
       banking: "CRR",
       din: "SD.FLA.003",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_5_1_Usage_Area_ThermalyConditioned_Residential",
+    schemaSection: "Property_Related_Data",
   },
 
   "5-2": {
@@ -327,11 +375,15 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       nonResidential: true,
     },
     regulations: {
-      taxonomy: "CA 7.1 DNSH / CA 7.7 DNSH / CE 3.1 SC / CE 3.2 SC / CM 7.1 SC / CM 7.2 SC",
+      taxonomy:
+        "CA 7.1 DNSH / CA 7.7 DNSH / CE 3.1 SC / CE 3.2 SC / CM 7.1 SC / CM 7.2 SC",
       sfdr: "PAI 18+19",
       banking: "CRR",
       din: "SD.FLA.002",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_5_2_NetFloorArea_ThermalyConditioned_NonResidential",
+    schemaSection: "Property_Related_Data",
   },
 
   "5-3": {
@@ -359,6 +411,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       taxonomy: "CM 7.1 SC / CE 3.2 SC",
       din: "SD.FLA.001",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_5_3_GrossExternalArea",
+    schemaSection: "Property_Related_Data",
   },
 
   "5-4": {
@@ -385,6 +440,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.FLA.011",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_5_4_GrossInternalArea",
+    schemaSection: "Property_Related_Data",
   },
 
   "5-5": {
@@ -411,6 +469,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.FLA.007",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_5_5_Rental_Area",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -437,6 +498,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       nonResidential: true,
     },
     enumValues: ["YES_CA", "YES_CE", "YES_CM", "NO"],
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_6_1_Object_Is_Taxonomy_Aligned",
+    schemaSection: "Property_Related_Data",
   },
 
   // =========================================================================
@@ -445,7 +509,8 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
   "7-1": {
     number: "7-1",
     apiKey: "kpi_7-1",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "file",
@@ -469,12 +534,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       banking: "CRR, EBA, ECB",
       din: "SD.ENP.007",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_1_Energy_Performance_Certificate",
+    schemaSection: "Energy_Performance",
   },
 
   "7-2": {
     number: "7-2",
     apiKey: "kpi_7-2",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Class",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "string",
@@ -483,7 +552,8 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     nameDE: "Energieausweis",
     dataPointEN: "Energy Performance Certificate (EPC) class",
     dataPointDE: "Energieausweis: Energieeffizienzklasse",
-    optionalCondition: "Only to be indicated if no digitally readable EPC is available",
+    optionalCondition:
+      "Only to be indicated if no digitally readable EPC is available",
     relevance: {
       newBuildings: true,
       existingBuildings: true,
@@ -500,19 +570,24 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       banking: "CRR, EBA, ECB",
       din: "SD.ENP.007",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_2_Energy_Class",
+    schemaSection: "Energy_Performance",
   },
 
   "7-3": {
     number: "7-3",
     apiKey: "kpi_7-3",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Consumption",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "number",
     unit: "kWh/m²a",
     nameEN: "Energy Performance Certificate (EPC)",
     nameDE: "Energieausweis",
-    dataPointEN: "Energy Performance Certificate (EPC) primary energy consumption",
+    dataPointEN:
+      "Energy Performance Certificate (EPC) primary energy consumption",
     dataPointDE: "Energie(verbrauchs)ausweis: Primärenergieverbrauch",
     optionalCondition: "Only for consumption-based EPC without digital file",
     relevance: {
@@ -526,12 +601,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.ENP.004",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_3_Primary_Energy_Metered",
+    schemaSection: "Energy_Performance",
   },
 
   "7-4": {
     number: "7-4",
     apiKey: "kpi_7-4",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Primary_Energy_Demand",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "number",
@@ -553,12 +632,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       taxonomy: "CA 7.1 SC / CM 7.1 SC",
       din: "SD.ENP.005",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_4_Primary_Energy_Calculated",
+    schemaSection: "Energy_Performance",
   },
 
   "7-5": {
     number: "7-5",
     apiKey: "kpi_7-5",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Consumption",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "number",
@@ -579,12 +662,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.ENP.004",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_5_Delivered_Energy_Metered",
+    schemaSection: "Energy_Performance",
   },
 
   "7-6": {
     number: "7-6",
     apiKey: "kpi_7-6",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_End_Energy_Demand",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "number",
@@ -606,12 +693,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       taxonomy: "CA 7.1 SC / CM 7.1 SC",
       din: "SD.ENP.005",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_6_Delivered_Energy_Calculated",
+    schemaSection: "Energy_Performance",
   },
 
   "7-7": {
     number: "7-7",
     apiKey: "kpi_7-7",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Expiry_Date",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "date",
@@ -620,7 +711,8 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     nameDE: "Energieausweis",
     dataPointEN: "Energy Performance Certificate (EPC) expiry date",
     dataPointDE: "Energieausweis: Gültigkeitsdatum",
-    optionalCondition: "Only to be indicated if no digitally readable EPC is available",
+    optionalCondition:
+      "Only to be indicated if no digitally readable EPC is available",
     relevance: {
       newBuildings: false,
       existingBuildings: true,
@@ -632,12 +724,16 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
     regulations: {
       din: "SD.ENP.002",
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_7_EPC_Expiry_Date",
+    schemaSection: "Energy_Performance",
   },
 
   "7-8": {
     number: "7-8",
     apiKey: "kpi_7-8",
-    fieldName: "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type",
+    fieldName:
+      "Energy_Performance_Certificate_EPC_Energy_Performance_Certificate_EPC_Type",
     type: "BASIC",
     domain: "ENERGY_PERFORMANCE",
     dataType: "enum",
@@ -654,7 +750,15 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
-    enumValues: ["CONSUMPTION_BASED", "DEMAND_BASED", "NO_OBLIGATION", "NON_EXISTENT"],
+    enumValues: [
+      "CONSUMPTION_BASED",
+      "DEMAND_BASED",
+      "NO_OBLIGATION",
+      "NON_EXISTENT",
+    ],
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_7_8_EPC_Type",
+    schemaSection: "Energy_Performance",
   },
 
   // =========================================================================
@@ -680,10 +784,20 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
-    enumValues: ["DISTRICT_HEATING", "GAS", "OIL", "ELECTRICITY", "HEAT_PUMP", "HYBRID"],
+    enumValues: [
+      "DISTRICT_HEATING",
+      "GAS",
+      "OIL",
+      "ELECTRICITY",
+      "HEAT_PUMP",
+      "HYBRID",
+    ],
     regulations: {
       din: "BD.WAE.004/005",
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_8_1_EnergyCarriersForHeating",
+    schemaSection: "Energy_Consumption",
   },
 
   "8-2": {
@@ -706,6 +820,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_8_2_MeteredEnergyConsumption",
+    schemaSection: "Energy_Consumption",
   },
 
   "8-3": {
@@ -728,6 +845,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_8_3_MeteredEnergyConsumptionAsTable",
+    schemaSection: "Energy_Consumption",
   },
 
   // =========================================================================
@@ -736,7 +856,8 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
   "9-1": {
     number: "9-1",
     apiKey: "kpi_9-1",
-    fieldName: "GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset",
+    fieldName:
+      "GHG_Emissions_Direct_GHG_Emissions_Generated_In_On_Real_Estate_Asset",
     type: "BASIC",
     domain: "GREENHOUSE_GASES",
     dataType: "number",
@@ -758,20 +879,26 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       csrd: "ESRS E1-6",
       din: "BD.THG.006",
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_9_1_DirectEmissions",
+    schemaSection: "Greenhouse_Gases",
   },
 
   "9-2": {
     number: "9-2",
     apiKey: "kpi_9-2",
-    fieldName: "GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset",
+    fieldName:
+      "GHG_Emissions_Indirect_GHG_Emissions_Generated_From_Energy_Usage_In_On_Real_Estate_Asset",
     type: "BASIC",
     domain: "GREENHOUSE_GASES",
     dataType: "number",
     unit: "t CO2e p.a.",
     nameEN: "GHG emissions",
     nameDE: "Treibhausgasemissionen",
-    dataPointEN: "Indirect GHG emissions generated from energy usage in/on real estate asset",
-    dataPointDE: "Indirekte Treibhausgasemissionen aus Energienutzung am/im Gebäude/Liegenschaft",
+    dataPointEN:
+      "Indirect GHG emissions generated from energy usage in/on real estate asset",
+    dataPointDE:
+      "Indirekte Treibhausgasemissionen aus Energienutzung am/im Gebäude/Liegenschaft",
     relevance: {
       newBuildings: false,
       existingBuildings: true,
@@ -785,6 +912,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       csrd: "ESRS E1-6",
       din: "BD.THG.007",
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_9_2_IndirectEmissions",
+    schemaSection: "Greenhouse_Gases",
   },
 
   "9-3": {
@@ -807,6 +937,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_9_3_OtherIndirectEmissions",
+    schemaSection: "Greenhouse_Gases",
   },
 
   "9-4": {
@@ -829,6 +962,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_9_4_ShareOfEstimatedEmissions",
+    schemaSection: "Greenhouse_Gases",
   },
 
   "9-5": {
@@ -852,6 +988,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       nonResidential: true,
     },
     enumValues: ["MARKET_BASED", "LOCATION_BASED"],
+    elementType: "KPIValueElement",
+    schemaKey: "KPI_9_5_AreIndirectEmissionsBasedOnMarketOrOnLocation",
+    schemaSection: "Greenhouse_Gases",
   },
 
   "9-6": {
@@ -875,6 +1014,9 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
+    elementType: "KPIValueList",
+    schemaKey: "KPI_9_6_CO2EmissionsFactorPerCarrier",
+    schemaSection: "Greenhouse_Gases",
   },
 };
 
@@ -891,12 +1033,22 @@ export const FIELD_NAME_MAP: Map<string, KpiDefinition> = new Map();
 /** Map from KPI number to KPI definition */
 export const NUMBER_MAP: Map<string, KpiDefinition> = new Map();
 
+/** Map from schema key (KPI_1_1_Date_Of_Building_Permit) to KPI definition */
+export const SCHEMA_KEY_MAP: Map<string, KpiDefinition> = new Map();
+
+/** Map from schema section to KPI definitions in that section */
+export const SECTION_KPIS: Map<KpiSection, KpiDefinition[]> = new Map();
+
 // Build lookup maps
 for (const [number, def] of Object.entries(KPI_REGISTRY)) {
   API_KEY_MAP.set(def.apiKey, def);
-  API_KEY_MAP.set(def.apiKey.replace("kpi_", ""), def); // Also support without prefix
+  API_KEY_MAP.set(def.apiKey.replace("kpi_", ""), def);
   FIELD_NAME_MAP.set(def.fieldName, def);
   NUMBER_MAP.set(number, def);
+  SCHEMA_KEY_MAP.set(def.schemaKey, def);
+  const sectionList = SECTION_KPIS.get(def.schemaSection) ?? [];
+  sectionList.push(def);
+  SECTION_KPIS.set(def.schemaSection, sectionList);
 }
 
 // =============================================================================
@@ -927,7 +1079,9 @@ export function getKpiByApiKey(apiKey: string): KpiDefinition | undefined {
 /**
  * Get KPI definition by internal field name
  */
-export function getKpiByFieldName(fieldName: string): KpiDefinition | undefined {
+export function getKpiByFieldName(
+  fieldName: string,
+): KpiDefinition | undefined {
   return FIELD_NAME_MAP.get(fieldName);
 }
 
@@ -953,32 +1107,36 @@ export function getKpisByDomain(domain: KpiDomain): KpiDefinition[] {
 }
 
 /**
- * Get required KPIs for a building context
+ * Get required KPIs for a building context.
+ *
+ * Delegates to the scenario-based mandatory matrix in scenarios.ts for
+ * enforcement. This function maps the API-style context to a BuildingScenario
+ * and returns matching KpiDefinitions from the registry.
+ *
+ * @deprecated Prefer getMandatoryKpis() from scenarios.ts for enforcement.
+ *   This wrapper is kept for backward compatibility.
  */
 export function getRequiredKpis(context: {
   buildingState: "NEW" | "EXISTING" | "RENOVATION" | "DEMOLITION";
   buildingCategory: "RESIDENTIAL" | "NON_RESIDENTIAL";
 }): KpiDefinition[] {
-  return Object.values(KPI_REGISTRY).filter((kpi) => {
-    // Check building state relevance
-    const stateRelevant =
-      (context.buildingState === "NEW" && kpi.relevance.newBuildings) ||
-      (context.buildingState === "EXISTING" && kpi.relevance.existingBuildings) ||
-      (context.buildingState === "RENOVATION" && kpi.relevance.renovation) ||
-      (context.buildingState === "DEMOLITION" && kpi.relevance.demolition);
+  const isNeubau =
+    context.buildingState === "NEW" ||
+    context.buildingState === "RENOVATION";
+  const isWohnen = context.buildingCategory === "RESIDENTIAL";
 
-    if (!stateRelevant) return false;
+  let scenario: BuildingScenario;
+  if (isNeubau && isWohnen) scenario = "neubauWohnen";
+  else if (isNeubau && !isWohnen) scenario = "neubauNichtwohnen";
+  else if (!isNeubau && isWohnen) scenario = "bestandWohnen";
+  else scenario = "bestandNichtwohnen";
 
-    // Check building category relevance
-    const categoryRelevant =
-      (context.buildingCategory === "RESIDENTIAL" && kpi.relevance.residential) ||
-      (context.buildingCategory === "NON_RESIDENTIAL" && kpi.relevance.nonResidential);
+  const mandatoryKeys = getMandatorySchemaKeys(scenario);
+  const mandatorySet = new Set(mandatoryKeys);
 
-    if (!categoryRelevant) return false;
-
-    // Only return Basic KPIs without optional conditions as required
-    return kpi.type === "BASIC" && !kpi.optionalCondition;
-  });
+  return Object.values(KPI_REGISTRY).filter((kpi) =>
+    mandatorySet.has(kpi.schemaKey),
+  );
 }
 
 /**

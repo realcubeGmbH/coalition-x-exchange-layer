@@ -14,34 +14,23 @@ import { Logger } from "../core/Logger";
 import { schemaService } from "./SchemaService";
 import { isJsonObject, toJsonValue } from "../utils/json";
 import { computeChecksum } from "../utils/checksum";
-import { FlatKpiSchema } from "./schema";
+import { normalizeKpiInput } from "./normalizer";
+import { C1InputSchema } from "./c1-input";
+import type { C1Input } from "./c1-input";
+import { enrichKpiInput } from "./enricher";
+import { mergeKpiData, evaluateCompleteness } from "./merger";
+import type { MergeResult } from "./merger";
+import { KpiDataSchema } from "./schema";
+import type { KpiData } from "./schema";
 import { validateDependencies } from "./validators";
+import type { ValidationError } from "./validators";
+import { validateInitialSubmission, extractScenarioInputs } from "./scenarios";
 import type { KpiRecord, ValidationStatus, DataSource } from "@prisma/client";
 import type { ServiceContext } from "../domain/shared";
 
 // =============================================================================
 // Types
 // =============================================================================
-
-export interface SubmitKpiParams {
-  assetId: string;
-  organizationId: string;
-  kpis: object;
-  schemaVersion?: string;
-  submissionId?: string;
-  externalAssetId?: string;
-  source?: DataSource;
-}
-
-export interface KpiRecordResult {
-  id: string;
-  assetId: string;
-  dataVersion: number;
-  schemaVersion: string;
-  validationStatus: ValidationStatus;
-  validationErrors?: object;
-  createdAt: Date;
-}
 
 export interface GetKpiParams {
   assetId: string;
@@ -143,82 +132,6 @@ export class KpiService {
   }
 
   /**
-   * Submit KPI data for an asset
-   */
-  async submitKpi(params: SubmitKpiParams): Promise<KpiRecordResult> {
-    const {
-      assetId,
-      organizationId,
-      kpis,
-      schemaVersion,
-      submissionId,
-      externalAssetId,
-      source = "API",
-    } = params;
-
-    this.logger.info("Submitting KPI data", { assetId, schemaVersion, source });
-
-    // 1. Get schema (default if not specified)
-    const schema = await schemaService.getSchema(schemaVersion);
-
-    // 2. Verify asset exists and belongs to organization
-    const asset = await prisma.asset.findFirst({
-      where: {
-        id: assetId,
-        organizationId,
-      },
-    });
-
-    if (!asset) {
-      throw ApiError.assetNotFound(assetId);
-    }
-
-    // 3. Get next data version for this asset
-    const latestRecord = await prisma.kpiRecord.findFirst({
-      where: { assetId },
-      orderBy: { dataVersion: "desc" },
-      select: { dataVersion: true },
-    });
-
-    const nextDataVersion = (latestRecord?.dataVersion ?? 0) + 1;
-
-    // 4. Compute checksum for data integrity
-    const checksum = computeChecksum(kpis);
-
-    // 5. Create KPI record
-    const kpiRecord = await prisma.kpiRecord.create({
-      data: {
-        assetId,
-        organizationId,
-        submissionId,
-        dataVersion: nextDataVersion,
-        schemaVersionId: schema.id,
-        kpiData: kpis,
-        checksum,
-        validationStatus: "PENDING",
-        externalAssetId,
-        source,
-      },
-    });
-
-    this.logger.info("KPI record created", {
-      id: kpiRecord.id,
-      assetId,
-      dataVersion: nextDataVersion,
-      schemaVersion: schema.version,
-    });
-
-    return {
-      id: kpiRecord.id,
-      assetId: kpiRecord.assetId,
-      dataVersion: kpiRecord.dataVersion,
-      schemaVersion: schema.version,
-      validationStatus: kpiRecord.validationStatus,
-      createdAt: kpiRecord.createdAt,
-    };
-  }
-
-  /**
    * Get latest KPI record for an asset
    */
   async getLatestKpi(params: GetKpiParams): Promise<KpiRecord | null> {
@@ -239,7 +152,7 @@ export class KpiService {
    * Get specific version of KPI record for an asset
    */
   async getKpiByVersion(
-    params: GetKpiParams & { version: number }
+    params: GetKpiParams & { version: number },
   ): Promise<KpiRecord | null> {
     const { assetId, organizationId, version } = params;
 
@@ -260,7 +173,7 @@ export class KpiService {
   async getKpiVersionWithSchema(
     assetId: string,
     version: number,
-    organizationId: string
+    organizationId: string,
   ): Promise<KpiVersionWithSchema> {
     // Verify asset exists and belongs to org
     const asset = await prisma.asset.findFirst({
@@ -334,7 +247,7 @@ export class KpiService {
    * List KPI history with schema info - formatted for API response
    */
   async listKpiHistoryWithSchema(
-    params: ListKpiParams
+    params: ListKpiParams,
   ): Promise<KpiHistoryResult> {
     const { assetId, organizationId, limit = 10, offset = 0 } = params;
 
@@ -383,10 +296,10 @@ export class KpiService {
   }
 
   /**
-   * Submit KPI with full validation workflow
+   * Submit KPI with full V0.9.0 validation + enrichment + merge workflow
    */
   async submitKpiWithValidation(
-    params: SubmitKpiWithValidationParams
+    params: SubmitKpiWithValidationParams,
   ): Promise<KpiSubmissionResult> {
     const {
       assetId,
@@ -399,14 +312,13 @@ export class KpiService {
 
     const startTime = Date.now();
 
-    // Set logger context for audit logging
     this.logger.setContext({
       organizationId,
       userId: ctx.userId,
       assetId,
     });
 
-    // 1. Get schema (default if not specified)
+    // 1. Get schema
     const schema = await schemaService.getSchema(schemaVersion);
 
     // 2. Verify asset exists
@@ -418,7 +330,7 @@ export class KpiService {
       throw ApiError.assetNotFound(assetId);
     }
 
-    // 3. Check idempotency
+    // 3. Idempotency check
     if (idempotencyKey) {
       const existing = await prisma.submission.findUnique({
         where: { idempotencyKey },
@@ -433,7 +345,6 @@ export class KpiService {
 
       if (existing && existing.kpiRecord) {
         this.logger.info("Idempotent request - returning existing result");
-
         return {
           data: {
             id: existing.kpiRecord.id,
@@ -453,8 +364,23 @@ export class KpiService {
       }
     }
 
-    // 4. Validate KPI data with Zod schema
-    const parseResult = FlatKpiSchema.safeParse(kpis);
+    // 4. Normalize input (accepts kpi_1-1, 1-1, schema keys, or pre-sectioned)
+    const normalized = normalizeKpiInput(kpis as Record<string, unknown>);
+
+    if (normalized.unknownFields.length > 0) {
+      this.logger.warn("Unknown KPI fields in submission", {
+        unknownFields: normalized.unknownFields,
+        assetId,
+      });
+    }
+
+    // 5. Parse normalized input through C1 schema
+    const c1Input: C1Input = {
+      asset_id: assetId,
+      schema_version: "0.9.0",
+      kpis: normalized.kpis as C1Input["kpis"],
+    };
+    const parseResult = C1InputSchema.safeParse(c1Input);
 
     let validationStatus: ValidationStatus = "PASSED";
     let validationErrors: object[] = [];
@@ -468,20 +394,110 @@ export class KpiService {
       }));
     }
 
-    // 5. Validate subset dependencies (if parse succeeded)
+    // 6. Enrich slim input into V0.9.0 rich objects
+    let enrichedData: KpiData | null = null;
     if (parseResult.success) {
-      const depResult = validateDependencies(parseResult.data);
-      if (!depResult.valid) {
-        validationStatus = "FAILED";
-        validationErrors = depResult.errors.map((e) => ({
-          field: e.field,
-          code: "DEPENDENCY_ERROR",
-          message: e.message,
-        }));
+      enrichedData = enrichKpiInput(parseResult.data, {
+        userId: ctx.userId,
+      });
+    }
+
+    // 7. Load latest KpiRecord — determines initial vs patch
+    let mergeResult: MergeResult | null = null;
+    let mergedData: KpiData | null = null;
+    if (enrichedData) {
+      const latestRecord = await prisma.kpiRecord.findFirst({
+        where: { assetId },
+        orderBy: { dataVersion: "desc" },
+        select: { dataVersion: true, kpiData: true },
+      });
+
+      const isInitialSubmission = !latestRecord;
+
+      // 7a. Initial submission — enforce mandatory KPIs
+      if (isInitialSubmission) {
+        const scenarioInputs = extractScenarioInputs(enrichedData);
+
+        if (!scenarioInputs) {
+          validationStatus = "FAILED";
+          validationErrors = [
+            {
+              field: "Property_Related_Data.KPI_1_2_Building_Completion_Year",
+              code: "MISSING_REQUIRED",
+              message:
+                "KPI 1-2 (Year of construction) is required on initial submission to determine building scenario",
+            },
+            {
+              field: "Property_Related_Data.KPI_3_1_Main_Use_Of_Building",
+              code: "MISSING_REQUIRED",
+              message:
+                "KPI 3-1 (Primary use of building) is required on initial submission to determine building scenario",
+            },
+          ];
+          enrichedData = null;
+        } else {
+          const initialResult = validateInitialSubmission(
+            enrichedData,
+            scenarioInputs.constructionYear,
+            scenarioInputs.primaryUse,
+          );
+
+          this.logger.info("Initial submission scenario derived", {
+            scenario: initialResult.scenario,
+            assetId,
+          });
+
+          if (!initialResult.valid) {
+            validationStatus = "FAILED";
+            validationErrors = initialResult.missingKpis.map((kpi) => ({
+              field: `${kpi.section}.${kpi.schemaKey}`,
+              code: "MISSING_REQUIRED",
+              message: `KPI ${kpi.kpiNumber} (${kpi.label}) is required for ${initialResult.scenario} on initial submission`,
+            }));
+            enrichedData = null;
+          }
+        }
+      }
+
+      // 7b. Merge (initial: enriched data only; patch: merge with existing)
+      if (enrichedData) {
+        const existingData = latestRecord?.kpiData as KpiData | null;
+
+        mergeResult = mergeKpiData(existingData, enrichedData, {
+          submittedBy: ctx.userId,
+        });
+        mergedData = mergeResult.merged;
+
+        // 8. Validate merged result against V0.9.0 schema
+        const schemaResult = KpiDataSchema.safeParse(mergedData);
+        if (!schemaResult.success) {
+          validationStatus = "FAILED";
+          validationErrors = schemaResult.error.issues.map(
+            (e: { path: PropertyKey[]; code: string; message: string }) => ({
+              field: e.path.map(String).join("."),
+              code: e.code,
+              message: e.message,
+            }),
+          );
+          mergedData = null;
+        }
+
+        // 9. Validate dependencies (unwraps .Value from elements)
+        if (mergedData) {
+          const depResult = validateDependencies(mergedData);
+          if (!depResult.valid) {
+            validationStatus = "FAILED";
+            validationErrors = depResult.errors.map((e: ValidationError) => ({
+              field: e.field,
+              code: "DEPENDENCY_ERROR",
+              message: e.message,
+            }));
+          }
+        }
       }
     }
 
-    // 6. Create submission record (always, for audit trail)
+    // 10. Create submission record (always, for audit trail)
     const submission = await prisma.submission.create({
       data: {
         organizationId,
@@ -504,18 +520,14 @@ export class KpiService {
       },
     });
 
-    // 7. If validation failed, return early without creating KPI record
-    if (validationStatus === "FAILED") {
+    // 11. If validation failed, return early
+    if (validationStatus === "FAILED" || !mergedData) {
       const responseTime = Date.now() - startTime;
       await prisma.submission.update({
         where: { id: submission.id },
-        data: {
-          responseTime,
-          completedAt: new Date(),
-        },
+        data: { responseTime, completedAt: new Date() },
       });
 
-      // Audit log for failed submission
       await this.logger.audit({
         action: "SUBMISSION_FAILED",
         resource: "Submission",
@@ -533,7 +545,7 @@ export class KpiService {
           id: submission.id,
           assetId,
           externalId: asset.externalId,
-          dataVersion: 0, // No version created
+          dataVersion: 0,
           schemaVersion: schema.version,
           validationStatus,
           validationErrors,
@@ -544,37 +556,61 @@ export class KpiService {
       };
     }
 
-    // 8. Create KPI record (only on successful validation)
-    const result = await this.submitKpi({
-      assetId,
-      organizationId,
-      kpis,
-      schemaVersion: schema.version,
-      submissionId: submission.id,
-      externalAssetId: asset.externalId || undefined,
-      source: "API",
+    // 12. Evaluate completeness and determine validationStatus
+    const completeness = evaluateCompleteness(mergedData);
+    const recordValidationStatus: ValidationStatus = completeness.isComplete
+      ? "PASSED"
+      : "PENDING";
+
+    // 13. Create KPI record with merged data (optimistic locking via dataVersion)
+    const latestVersion = await prisma.kpiRecord.findFirst({
+      where: { assetId },
+      orderBy: { dataVersion: "desc" },
+      select: { dataVersion: true },
     });
+    const nextDataVersion = (latestVersion?.dataVersion ?? 0) + 1;
 
-    // 9. Update validation status to PASSED
-    await this.updateValidationStatus(result.id, "PASSED");
+    const checksum = computeChecksum(mergedData);
 
-    // 10. Complete submission with response time
-    const responseTime = Date.now() - startTime;
-    await prisma.submission.update({
-      where: { id: submission.id },
+    const kpiRecord = await prisma.kpiRecord.create({
       data: {
-        responseTime,
-        completedAt: new Date(),
+        assetId,
+        organizationId,
+        submissionId: submission.id,
+        dataVersion: nextDataVersion,
+        schemaVersionId: schema.id,
+        kpiData: mergedData,
+        checksum,
+        validationStatus: recordValidationStatus,
+        externalAssetId: asset.externalId || undefined,
+        source: "API",
       },
     });
 
-    // 11. Audit log for successful submission
+    // 14. Complete submission
+    const responseTime = Date.now() - startTime;
+    await prisma.submission.update({
+      where: { id: submission.id },
+      data: { responseTime, completedAt: new Date() },
+    });
+
+    // 15. Audit log
     await this.logger.audit({
       action: "KPI_SUBMITTED",
       resource: "KpiRecord",
-      resourceId: result.id,
+      resourceId: kpiRecord.id,
       payload: kpis,
-      response: { dataVersion: result.dataVersion, validationStatus: "PASSED" },
+      response: {
+        dataVersion: nextDataVersion,
+        validationStatus: recordValidationStatus,
+        mergeResult: mergeResult
+          ? {
+              changed: mergeResult.changedKpis.length,
+              added: mergeResult.addedKpis.length,
+              conflicts: mergeResult.conflictedKpis.length,
+            }
+          : undefined,
+      },
       schemaVersion: schema.version,
       statusCode: 201,
       ipAddress: ctx.ipAddress || undefined,
@@ -583,13 +619,13 @@ export class KpiService {
 
     return {
       data: {
-        id: result.id,
-        assetId: result.assetId,
+        id: kpiRecord.id,
+        assetId: kpiRecord.assetId,
         externalId: asset.externalId,
-        dataVersion: result.dataVersion,
+        dataVersion: kpiRecord.dataVersion,
         schemaVersion: schema.version,
-        validationStatus: "PASSED",
-        createdAt: result.createdAt,
+        validationStatus: recordValidationStatus,
+        createdAt: kpiRecord.createdAt,
       },
       transactionId: submission.id,
       status: 201,
@@ -601,7 +637,7 @@ export class KpiService {
    * Finds asset by identifier, returns error if not found
    */
   async submitKpiByIdentifier(
-    params: SubmitKpiByIdentifierParams
+    params: SubmitKpiByIdentifierParams,
   ): Promise<KpiSubmissionResult> {
     const {
       assetId,
@@ -647,13 +683,13 @@ export class KpiService {
       asset = await prisma.asset.findFirst({
         where: { externalId, organizationId },
       });
-      
+
       if (!asset) {
         this.logger.info("Creating new asset for external_id", {
           externalId,
           organizationId,
         });
-        
+
         asset = await prisma.asset.create({
           data: {
             organizationId,
@@ -664,7 +700,7 @@ export class KpiService {
             sourceTag: "PARTNER",
           },
         });
-        
+
         this.logger.info("Asset created successfully", {
           assetId: asset.id,
           externalId,
@@ -723,7 +759,7 @@ export class KpiService {
   async updateValidationStatus(
     kpiRecordId: string,
     status: ValidationStatus,
-    errors?: object
+    errors?: object,
   ): Promise<KpiRecord> {
     const record = await prisma.kpiRecord.update({
       where: { id: kpiRecordId },
@@ -757,7 +793,7 @@ export class KpiService {
   async compareVersions(
     assetId: string,
     version1: number,
-    version2: number
+    version2: number,
   ): Promise<{
     changedFields: string[];
     record1: KpiRecord | null;

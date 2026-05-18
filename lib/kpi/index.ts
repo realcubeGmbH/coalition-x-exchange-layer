@@ -1,24 +1,33 @@
 /**
  * KPI Module Exports
  *
- * Schema Version: 2.0
- *
- * Input Formats (per Connector 1 AC3):
- * - API format: { "kpi_1-1": "2025-10-15" }
- * - Number format: { "1-1": "2025-10-15" }
- * - Internal format: { "Building_Permit_...": "2025-10-15" }
+ * V0.9.0 — Rich KPI objects with metadata, enrichment, and merge
  */
 
-// Core registry and normalization
+// Core registry
 export * from "./registry";
+
+// V0.9.0 schemas
+export * from "./schema";
+
+// Input normalization (kpi_1-1, 1-1, field names → V0.9.0 section/key)
 export * from "./normalizer";
 
-// Schema and validation
-export * from "./schema";
+// C1 input parsing
+export * from "./c1-input";
+
+// Server-side enrichment
+export * from "./enricher";
+
+// Merge logic
+export * from "./merger";
+
+// Validation
 export * from "./validators";
-export * from "./transformer";
+
+// Building scenarios & initial submission enforcement
+export * from "./scenarios";
 
 // Services
 export * from "./KpiService";
 export * from "./SchemaService";
-

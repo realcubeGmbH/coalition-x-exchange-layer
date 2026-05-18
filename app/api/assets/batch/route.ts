@@ -11,12 +11,13 @@ import {
   type ApiHandler,
   requireOrganizationId,
   noTenantContextResponse,
+  getClientIp,
+  getUserAgent,
 } from "@/lib/api-auth";
 import { ApiError, handleError } from "@/lib/core/ErrorHandler";
 import { createRequestLogger } from "@/lib/core/Logger";
 import { kpiService, schemaService } from "@/lib/kpi";
-import { FlatKpiSchema, type FlatKpiInput } from "@/lib/kpi/schema";
-import { validateDependencies } from "@/lib/kpi/validators";
+import { createServiceContext } from "@/lib/domain/shared";
 import { toJsonValue } from "@/lib/utils/json";
 
 // =============================================================================
@@ -28,7 +29,7 @@ interface BatchItem {
   asset_id?: string;
   name?: string;
   address?: string;
-  kpis: FlatKpiInput;
+  kpis: Record<string, unknown>;
 }
 
 interface BatchBody {
@@ -139,7 +140,16 @@ const handlePost: ApiHandler = async (request, auth) => {
       },
     });
 
-    // Process each item
+    const ctx = createServiceContext({
+      userId: auth.userId,
+      organizationId: auth.organizationId,
+      ipAddress: getClientIp(request),
+      userAgent: getUserAgent(request),
+      isOrgLevel: auth.isOrgLevel,
+      isSystemAdmin: auth.isSystemAdmin,
+    });
+
+    // Process each item via the V0.9.0 service flow
     const results: BatchItemResult[] = [];
     let successCount = 0;
     let failureCount = 0;
@@ -155,52 +165,7 @@ const handlePost: ApiHandler = async (request, auth) => {
       };
 
       try {
-        // 1. Get or create asset
-        let asset;
-
-        if (item.asset_id) {
-          // Use existing asset
-          asset = await prisma.asset.findFirst({
-            where: {
-              id: item.asset_id,
-              organizationId: auth.organizationId,
-            },
-          });
-
-          if (!asset) {
-            itemResult.errors = [
-              {
-                code: "ASSET_NOT_FOUND",
-                message: `Asset ${item.asset_id} not found`,
-              },
-            ];
-            results.push(itemResult);
-            failureCount++;
-            continue;
-          }
-        } else if (item.external_id) {
-          // Find or create by external ID
-          asset = await prisma.asset.findFirst({
-            where: {
-              organizationId: auth.organizationId,
-              externalId: item.external_id,
-            },
-          });
-
-          if (!asset) {
-            // Create new asset
-            asset = await prisma.asset.create({
-              data: {
-                organizationId: auth.organizationId!,
-                externalId: item.external_id,
-                name: item.name,
-                address: item.address,
-                dataSource: "API",
-                sourceTag: "PARTNER",
-              },
-            });
-          }
-        } else {
+        if (!item.asset_id && !item.external_id) {
           itemResult.errors = [
             {
               code: "MISSING_IDENTIFIER",
@@ -209,101 +174,72 @@ const handlePost: ApiHandler = async (request, auth) => {
           ];
           results.push(itemResult);
           failureCount++;
-          continue;
-        }
-
-        itemResult.asset_id = asset.id;
-
-        // 2. Validate KPI data
-        const parseResult = FlatKpiSchema.safeParse(item.kpis);
-
-        if (!parseResult.success) {
-          itemResult.errors = parseResult.error.issues.map((e) => ({
-            field: String(e.path.join(".")),
-            code: String(e.code),
-            message: e.message,
-          }));
-          results.push(itemResult);
-          failureCount++;
-
-          // Store batch item
-          await prisma.batchSubmissionItem.create({
-            data: {
-              submissionId: submission.id,
-              itemIndex: i,
-              externalId: item.external_id,
-              resourceId: asset.id,
-              status: "FAILED",
-              errors: toJsonValue(itemResult.errors),
-              itemPayload: toJsonValue(item),
-            },
-          });
-
-          continue;
-        }
-
-        // 3. Validate subset dependencies
-        const depResult = validateDependencies(parseResult.data);
-        if (!depResult.valid) {
-          itemResult.errors = depResult.errors.map((e) => ({
-            field: e.field,
-            code: "DEPENDENCY_ERROR",
-            message: e.message,
-          }));
-          results.push(itemResult);
-          failureCount++;
 
           await prisma.batchSubmissionItem.create({
             data: {
               submissionId: submission.id,
               itemIndex: i,
               externalId: item.external_id,
-              resourceId: asset.id,
+              resourceId: item.asset_id,
               status: "FAILED",
               errors: toJsonValue(itemResult.errors),
               itemPayload: toJsonValue(item),
             },
           });
-
           continue;
         }
 
-        // 4. Create KPI record
-        const kpiResult = await kpiService.submitKpi({
-          assetId: asset.id,
+        const kpiResult = await kpiService.submitKpiByIdentifier({
+          assetId: item.asset_id,
+          externalId: item.external_id,
           organizationId: auth.organizationId!,
           kpis: item.kpis,
           schemaVersion: schema.version,
-          externalAssetId: item.external_id,
-          source: "API",
+          assetName: item.name,
+          assetAddress: item.address,
+          ctx,
         });
 
-        // Update validation status
-        await kpiService.updateValidationStatus(kpiResult.id, "PASSED");
+        itemResult.asset_id = kpiResult.data.assetId;
 
-        // Store batch item
-        await prisma.batchSubmissionItem.create({
-          data: {
-            submissionId: submission.id,
-            itemIndex: i,
-            externalId: item.external_id,
-            resourceId: asset.id,
-            status: "SUCCESS",
-            itemPayload: toJsonValue(item),
-          },
-        });
+        if (kpiResult.status >= 400) {
+          itemResult.errors = kpiResult.data.validationErrors as object[] | undefined;
+          results.push(itemResult);
+          failureCount++;
 
-        // Success
-        itemResult.status = "success";
-        itemResult.kpi_record_id = kpiResult.id;
-        itemResult.data_version = kpiResult.dataVersion;
-        itemResult.validation_status = "PASSED";
-        delete itemResult.errors;
+          await prisma.batchSubmissionItem.create({
+            data: {
+              submissionId: submission.id,
+              itemIndex: i,
+              externalId: item.external_id,
+              resourceId: kpiResult.data.assetId,
+              status: "FAILED",
+              errors: toJsonValue(itemResult.errors ?? []),
+              itemPayload: toJsonValue(item),
+            },
+          });
+        } else {
+          itemResult.status = "success";
+          itemResult.kpi_record_id = kpiResult.data.id;
+          itemResult.data_version = kpiResult.data.dataVersion;
+          itemResult.validation_status = kpiResult.data.validationStatus;
+          delete itemResult.errors;
 
-        results.push(itemResult);
-        successCount++;
+          results.push(itemResult);
+          successCount++;
+
+          await prisma.batchSubmissionItem.create({
+            data: {
+              submissionId: submission.id,
+              itemIndex: i,
+              externalId: item.external_id,
+              resourceId: kpiResult.data.assetId,
+              status: "SUCCESS",
+              itemPayload: toJsonValue(item),
+            },
+          });
+        }
       } catch (error) {
-        // Unexpected error for this item
         itemResult.errors = [
           {
             code: "INTERNAL_ERROR",

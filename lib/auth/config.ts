@@ -96,7 +96,6 @@ export const ROLE_SCOPES: Record<string, TokenScope[]> = {
     "kpis:write",
     "submissions:read",
     "admin:users",
-    "admin:tokens",
     "admin:audit",
   ],
 
