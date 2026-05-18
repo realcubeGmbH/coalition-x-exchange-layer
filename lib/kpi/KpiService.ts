@@ -13,7 +13,7 @@ import { ApiError } from "../core/ErrorHandler";
 import { Logger } from "../core/Logger";
 import { schemaService } from "./SchemaService";
 import { isJsonObject, toJsonValue } from "../utils/json";
-import { computeChecksum } from "../utils/checksum";
+import { computeChecksum, verifyChecksum } from "../utils/checksum";
 import { normalizeKpiInput } from "./normalizer";
 import { C1InputSchema } from "./c1-input";
 import type { C1Input } from "./c1-input";
@@ -409,7 +409,15 @@ export class KpiService {
       const latestRecord = await prisma.kpiRecord.findFirst({
         where: { assetId },
         orderBy: { dataVersion: "desc" },
-        select: { dataVersion: true, kpiData: true },
+        select: {
+          id: true,
+          dataVersion: true,
+          kpiData: true,
+          checksum: true,
+          validationStatus: true,
+          submissionId: true,
+          createdAt: true,
+        },
       });
 
       const isInitialSubmission = !latestRecord;
@@ -467,6 +475,31 @@ export class KpiService {
           submittedBy: ctx.userId,
         });
         mergedData = mergeResult.merged;
+
+        // 7c. Checksum deduplication — skip if merged data is identical to latest
+        if (latestRecord?.checksum && mergedData) {
+          if (verifyChecksum(mergedData, latestRecord.checksum)) {
+            this.logger.info("Duplicate submission detected via checksum", {
+              assetId,
+              checksum: latestRecord.checksum,
+            });
+
+            return {
+              data: {
+                id: latestRecord.id,
+                assetId,
+                externalId: asset.externalId,
+                dataVersion: latestRecord.dataVersion,
+                schemaVersion: schema.version,
+                validationStatus: latestRecord.validationStatus,
+                createdAt: latestRecord.createdAt,
+              },
+              transactionId: latestRecord.submissionId ?? latestRecord.id,
+              idempotent: true,
+              status: 200,
+            };
+          }
+        }
 
         // 8. Validate merged result against V0.9.0 schema
         const schemaResult = KpiDataSchema.safeParse(mergedData);
