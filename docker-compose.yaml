@@ -19,6 +19,30 @@ services:
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=${API_HOST}
       - VIRTUAL_PATH=/
+      - TRUST_LAYER_URL=http://trust-layer:4100
+    depends_on:
+      - trust-layer
+    networks:
+      - coalition-x
+
+  trust-layer:
+    image: '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/trust-layer-repository-${ENVIRONMENT}'
+    container_name: trust-layer-app
+    restart: 'always'
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: 'trust-layer-app-logs-${ENVIRONMENT}'
+    env_file:
+      - '.env.trust-layer'
+    environment:
+      - PORT=4100
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:4100/health']
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - coalition-x
 

@@ -34,7 +34,7 @@ export class SchemaService {
   private defaultSchema: SchemaRegistry | null = null;
   private cacheExpiry: number = 0;
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  private readonly DEFAULT_VERSION = "1.0"; // Convention: version 1.0 is the default
+  private readonly DEFAULT_VERSION = "0.9.2"; // V0.9.2 ZIA KPI Basic Set
 
   /**
    * Get the default active schema

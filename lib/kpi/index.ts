@@ -1,16 +1,16 @@
 /**
  * KPI Module Exports
  *
- * V0.9.0 — Rich KPI objects with metadata, enrichment, and merge
+ * V0.9.2 — Rich KPI objects with metadata, enrichment, and merge
  */
 
 // Core registry
 export * from "./registry";
 
-// V0.9.0 schemas
+// V0.9.2 schemas
 export * from "./schema";
 
-// Input normalization (kpi_1-1, 1-1, field names → V0.9.0 section/key)
+// Input normalization (kpi_1-1, 1-1, field names → V0.9.2 section/key)
 export * from "./normalizer";
 
 // C1 input parsing

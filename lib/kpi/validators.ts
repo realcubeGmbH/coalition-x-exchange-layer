@@ -1,11 +1,16 @@
 /**
  * KPI Validators
  *
- * V0.9.0 dependency validation that operates on enriched KPI data,
+ * V0.9.2 dependency validation that operates on enriched KPI data,
  * unwrapping .Value from element wrappers.
  */
 
-import type { KpiData, KPIValueElement, KPIValueList } from "./schema";
+import type {
+  KpiData,
+  KPIValueElement,
+  KPIValueList,
+  KPIValueElementUseofBuilding,
+} from "./schema";
 
 // =============================================================================
 // Types
@@ -47,7 +52,7 @@ export interface ValidationResult {
 // Helpers
 // =============================================================================
 
-type KpiElement = KPIValueElement | KPIValueList;
+type KpiElement = KPIValueElement | KPIValueList | KPIValueElementUseofBuilding;
 
 function unwrapValue(element: KpiElement | undefined): unknown {
   if (!element) return undefined;
@@ -57,11 +62,11 @@ function unwrapValue(element: KpiElement | undefined): unknown {
 }
 
 // =============================================================================
-// V0.9.0 Dependency Validation
+// V0.9.2 Dependency Validation
 // =============================================================================
 
 /**
- * Validate V0.9.0 KPI data against subset dependency rules.
+ * Validate V0.9.2 KPI data against subset dependency rules.
  * Unwraps .Value/.Values from element wrappers.
  */
 export function validateDependencies(data: KpiData): ValidationResult {

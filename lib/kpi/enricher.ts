@@ -1,8 +1,10 @@
-import type { C1Input, C1ValueType } from "./c1-input";
+import type { C1Input, C1ValueType, C1EnergyDataItemType } from "./c1-input";
 import { SCHEMA_KEY_MAP } from "./registry";
 import type {
   KPIValueElement,
   KPIValueList,
+  KPIEnergyDataBySourceAndUseCollection,
+  KPIEnergyDataBySourceAndUseItem,
   KpiData,
   KpiSectionName,
 } from "./schema";
@@ -26,13 +28,22 @@ export function enrichKpiInput(
   for (const [sectionName, kpis] of Object.entries(input.kpis)) {
     if (!kpis) continue;
 
-    const section: Record<string, KPIValueElement | KPIValueList> = {};
+    const section: Record<
+      string,
+      KPIValueElement | KPIValueList | KPIEnergyDataBySourceAndUseCollection
+    > = {};
 
     for (const [kpiKey, rawValue] of Object.entries(kpis)) {
       const def = SCHEMA_KEY_MAP.get(kpiKey);
       if (!def) continue;
 
-      if (def.elementType === "KPIValueList") {
+      if (def.elementType === "KPIEnergyDataBySourceAndUseCollection") {
+        section[kpiKey] = enrichAsEnergyTable(
+          rawValue,
+          context.userId,
+          submittedAt,
+        );
+      } else if (def.elementType === "KPIValueList") {
         section[kpiKey] = enrichAsValueList(
           rawValue,
           context.userId,
@@ -69,6 +80,7 @@ function enrichAsValueElement(
 ): KPIValueElement {
   let value: string | number | boolean;
   let additionalInfo: string | undefined;
+  let reasonForChange: string | undefined;
 
   if (typeof raw === "object" && raw !== null && "value" in raw) {
     value = (raw as { value: string }).value;
@@ -79,26 +91,30 @@ function enrichAsValueElement(
     value = raw as string | number | boolean;
   }
 
-  if (
-    typeof raw === "object" &&
-    raw !== null &&
-    "additional_information" in raw
-  ) {
-    additionalInfo = (raw as { additional_information?: string })
-      .additional_information;
+  if (typeof raw === "object" && raw !== null) {
+    if ("additional_information" in raw) {
+      additionalInfo = (raw as { additional_information?: string })
+        .additional_information;
+    }
+    if ("reason_for_change" in raw) {
+      reasonForChange = (raw as { reason_for_change?: string })
+        .reason_for_change;
+    }
   }
 
   const element: KPIValueElement = {
     Value: value,
     SubmittedBy: userId,
-    SubmittetedAt: submittedAt,
-    Secret: "",
+    SubmittedAt: submittedAt,
     Source: "input",
     History: [],
   };
 
   if (additionalInfo !== undefined) {
     element.AdditionalInformation = additionalInfo;
+  }
+  if (reasonForChange !== undefined) {
+    element.ReasonForChangeOrUpdate = reasonForChange;
   }
 
   return element;
@@ -111,14 +127,17 @@ function enrichAsValueList(
 ): KPIValueList {
   let values: (string | number | boolean)[];
   let additionalInfo: string | undefined;
+  let reasonForChange: string | undefined;
 
   if (typeof raw === "object" && raw !== null && "values" in raw) {
     const arr = raw as {
       values: (string | number | boolean)[];
       additional_information?: string;
+      reason_for_change?: string;
     };
     values = arr.values;
     additionalInfo = arr.additional_information;
+    reasonForChange = arr.reason_for_change;
   } else if (Array.isArray(raw)) {
     values = raw;
   } else {
@@ -128,14 +147,16 @@ function enrichAsValueList(
   const element: KPIValueList = {
     Values: values,
     SubmittedBy: userId,
-    SubmittetedAt: submittedAt,
-    Secret: "",
+    SubmittedAt: submittedAt,
     Source: "input",
     History: [],
   };
 
   if (additionalInfo !== undefined) {
     element.AdditionalInformation = additionalInfo;
+  }
+  if (reasonForChange !== undefined) {
+    element.ReasonForChangeOrUpdate = reasonForChange;
   }
 
   return element;
@@ -148,6 +169,7 @@ function enrichAsEnergyClass(
 ): KPIValueElement {
   let value: string;
   let source: string;
+  let reasonForChange: string | undefined;
 
   if (
     typeof raw === "object" &&
@@ -155,20 +177,78 @@ function enrichAsEnergyClass(
     "value" in raw &&
     "source" in raw
   ) {
-    const ec = raw as { value: string; source: string };
+    const ec = raw as { value: string; source: string; reason_for_change?: string };
     value = ec.value;
     source = ec.source;
+    reasonForChange = ec.reason_for_change;
   } else {
     value = String(raw);
     source = "andere";
   }
 
-  return {
+  const element: KPIValueElement = {
     Value: value,
     SubmittedBy: userId,
-    SubmittetedAt: submittedAt,
-    Secret: "",
-    Source: source as KPIValueElement["Source"],
+    SubmittedAt: submittedAt,
+    Source: source,
     History: [],
   };
+
+  if (reasonForChange !== undefined) {
+    element.ReasonForChangeOrUpdate = reasonForChange;
+  }
+
+  return element;
+}
+
+function enrichAsEnergyTable(
+  raw: C1ValueType,
+  userId: string,
+  submittedAt: string,
+): KPIEnergyDataBySourceAndUseCollection {
+  let items: KPIEnergyDataBySourceAndUseItem[] = [];
+  let additionalInfo: string | undefined;
+  let reasonForChange: string | undefined;
+
+  if (typeof raw === "object" && raw !== null && "values" in raw) {
+    const table = raw as {
+      values: C1EnergyDataItemType[];
+      additional_information?: string;
+      reason_for_change?: string;
+    };
+    additionalInfo = table.additional_information;
+    reasonForChange = table.reason_for_change;
+    items = table.values.map((item) => ({
+      "Energy carrier": item.energy_carrier,
+      TotalValue: item.total_value,
+      Heating: item.heating,
+      DomesticHotWater: item.domestic_hot_water,
+      Cooling: item.cooling,
+      Lighting: item.lighting,
+      Ventilation: item.ventilation,
+      AdditionalElectricityDemand: item.additional_electricity_demand,
+      StartDateForConsumption: item.start_date,
+      EndDateForConsumption: item.end_date,
+      ConversionFactorPrimaryEnergy: item.conversion_factor_primary_energy,
+      ValuesAreBasedOnInferiorHeatingValue:
+        item.values_based_on_inferior_heating_value,
+    }));
+  }
+
+  const element: KPIEnergyDataBySourceAndUseCollection = {
+    Values: items,
+    SubmittedBy: userId,
+    SubmittedAt: submittedAt,
+    Source: "input",
+    History: [],
+  };
+
+  if (additionalInfo !== undefined) {
+    element.AdditionalInformation = additionalInfo;
+  }
+  if (reasonForChange !== undefined) {
+    element.ReasonForChangeOrUpdate = reasonForChange;
+  }
+
+  return element;
 }

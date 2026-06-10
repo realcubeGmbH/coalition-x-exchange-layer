@@ -1,16 +1,36 @@
 import { z } from "zod";
 
 // =============================================================================
-// Source Enums (per V0.9.0 JSON schema)
+// Signature Schema (per V0.9.2 — JWS detached payload, RFC 7515 Appendix F)
 // =============================================================================
 
-export const KpiSourceSchema = z.enum(["input", "computed", "evaluated"]);
-export type KpiSource = z.infer<typeof KpiSourceSchema>;
+const JwsCompactDetached = z.string().regex(/^[A-Za-z0-9_-]+\.\.[A-Za-z0-9_-]+$/);
+
+const JwsJsonSignatureItem = z.object({
+  protected: z.string(),
+  header: z.record(z.string(), z.unknown()).optional(),
+  signature: z.string(),
+});
+
+export const SignatureSchema = z.union([
+  JwsCompactDetached,
+  z.array(JwsCompactDetached).min(1),
+  z.object({
+    signatures: z.array(JwsJsonSignatureItem).min(1),
+  }).strict(),
+]);
+
+export type Signature = z.infer<typeof SignatureSchema>;
+
+// =============================================================================
+// Source (per V0.9.2 — free string for generic elements, enum for EnergyClass)
+// =============================================================================
 
 export const EnergyClassSourceSchema = z.enum([
   "Energieausweis",
   "FraunhoferMethode",
   "BVI",
+  "GModG",
   "andere",
 ]);
 export type EnergyClassSource = z.infer<typeof EnergyClassSourceSchema>;
@@ -47,16 +67,17 @@ export const EnergyClassEnum = z.enum([
 ]);
 
 // =============================================================================
-// KPIValueElement — scalar KPIs (self-referential History per V0.9.0 schema)
+// KPIValueElement — scalar KPIs (per V0.9.2 schema)
 // =============================================================================
 
 export type KPIValueElement = {
   Value: string | number | boolean;
   SubmittedBy: string;
-  SubmittetedAt: string;
-  Secret: string;
+  SubmittedAt: string;
   AdditionalInformation?: string;
-  Source?: KpiSource;
+  Source?: string;
+  ReasonForChangeOrUpdate?: string;
+  Signature?: Signature;
   History?: KPIValueElement[];
 };
 
@@ -64,25 +85,27 @@ export const KPIValueElementSchema: z.ZodType<KPIValueElement> = z.lazy(() =>
   z.object({
     Value: z.union([z.string(), z.number(), z.boolean()]),
     SubmittedBy: z.string(),
-    SubmittetedAt: z.string().datetime(),
-    Secret: z.string(),
+    SubmittedAt: z.string().datetime(),
     AdditionalInformation: z.string().optional(),
-    Source: KpiSourceSchema.optional(),
+    Source: z.string().optional(),
+    ReasonForChangeOrUpdate: z.string().optional(),
+    Signature: SignatureSchema.optional(),
     History: z.array(KPIValueElementSchema).optional(),
   }),
 );
 
 // =============================================================================
-// KPIValueList — array KPIs (self-referential History per V0.9.0 schema)
+// KPIValueList — array KPIs (per V0.9.2 schema)
 // =============================================================================
 
 export type KPIValueList = {
   Values: Array<string | number | boolean>;
   SubmittedBy: string;
-  SubmittetedAt: string;
-  Secret: string;
+  SubmittedAt: string;
   AdditionalInformation?: string;
-  Source?: KpiSource;
+  Source?: string;
+  ReasonForChangeOrUpdate?: string;
+  Signature?: Signature;
   History?: KPIValueList[];
 };
 
@@ -90,65 +113,116 @@ export const KPIValueListSchema: z.ZodType<KPIValueList> = z.lazy(() =>
   z.object({
     Values: z.array(z.union([z.string(), z.number(), z.boolean()])),
     SubmittedBy: z.string(),
-    SubmittetedAt: z.string().datetime(),
-    Secret: z.string(),
+    SubmittedAt: z.string().datetime(),
     AdditionalInformation: z.string().optional(),
-    Source: KpiSourceSchema.optional(),
+    Source: z.string().optional(),
+    ReasonForChangeOrUpdate: z.string().optional(),
+    Signature: SignatureSchema.optional(),
     History: z.array(KPIValueListSchema).optional(),
   }),
 );
 
 // =============================================================================
-// KPIValueElementUseofBuilding — KPI 3-1 (enum-restricted Value)
+// KPIValueElementUseofBuilding — KPI 3-1 (enum-restricted Value, optional)
 // =============================================================================
 
 export type KPIValueElementUseofBuilding = {
-  Value: z.infer<typeof BuildingUseEnum>;
+  Value?: z.infer<typeof BuildingUseEnum>;
   SubmittedBy: string;
-  SubmittetedAt: string;
-  Secret: string;
+  SubmittedAt: string;
   AdditionalInformation?: string;
-  Source?: KpiSource;
+  Source?: string;
+  ReasonForChangeOrUpdate?: string;
+  Signature?: Signature;
   History?: KPIValueElementUseofBuilding[];
 };
 
 export const KPIValueElementUseofBuildingSchema: z.ZodType<KPIValueElementUseofBuilding> =
   z.lazy(() =>
     z.object({
-      Value: BuildingUseEnum,
+      Value: BuildingUseEnum.optional(),
       SubmittedBy: z.string(),
-      SubmittetedAt: z.string().datetime(),
-      Secret: z.string(),
+      SubmittedAt: z.string().datetime(),
       AdditionalInformation: z.string().optional(),
-      Source: KpiSourceSchema.optional(),
+      Source: z.string().optional(),
+      ReasonForChangeOrUpdate: z.string().optional(),
+      Signature: SignatureSchema.optional(),
       History: z.array(KPIValueElementUseofBuildingSchema).optional(),
     }),
   );
 
 // =============================================================================
-// KPIValueElementEnergyClass — KPI 7-2 (enum Value + required Source)
+// KPIValueElementEnergyClass — KPI 7-2 (enum Value + enum Source, both optional)
 // =============================================================================
 
 export type KPIValueElementEnergyClass = {
-  Value: z.infer<typeof EnergyClassEnum>;
+  Value?: z.infer<typeof EnergyClassEnum>;
   SubmittedBy: string;
-  SubmittetedAt: string;
-  Secret: string;
+  SubmittedAt: string;
   AdditionalInformation?: string;
-  Source: EnergyClassSource;
+  Source?: EnergyClassSource;
+  ReasonForChangeOrUpdate?: string;
+  Signature?: Signature;
   History?: KPIValueElementEnergyClass[];
 };
 
 export const KPIValueElementEnergyClassSchema: z.ZodType<KPIValueElementEnergyClass> =
   z.lazy(() =>
     z.object({
-      Value: EnergyClassEnum,
+      Value: EnergyClassEnum.optional(),
       SubmittedBy: z.string(),
-      SubmittetedAt: z.string().datetime(),
-      Secret: z.string(),
+      SubmittedAt: z.string().datetime(),
       AdditionalInformation: z.string().optional(),
-      Source: EnergyClassSourceSchema,
+      Source: EnergyClassSourceSchema.optional(),
+      ReasonForChangeOrUpdate: z.string().optional(),
+      Signature: SignatureSchema.optional(),
       History: z.array(KPIValueElementEnergyClassSchema).optional(),
+    }),
+  );
+
+// =============================================================================
+// KPIEnergyDataBySourceAndUse — KPI 8-3 structured table (V0.9.2)
+// =============================================================================
+
+export const KPIEnergyDataBySourceAndUseItemSchema = z.object({
+  "Energy carrier": z.string().optional(),
+  TotalValue: z.number().optional(),
+  Heating: z.number().optional(),
+  DomesticHotWater: z.number().optional(),
+  Cooling: z.number().optional(),
+  Lighting: z.number().optional(),
+  Ventilation: z.number().optional(),
+  AdditionalElectricityDemand: z.number().optional(),
+  StartDateForConsumption: z.string().datetime().optional(),
+  EndDateForConsumption: z.string().datetime().optional(),
+  ConversionFactorPrimaryEnergy: z.number().optional(),
+  ValuesAreBasedOnInferiorHeatingValue: z.boolean().optional(),
+}).strict();
+
+export type KPIEnergyDataBySourceAndUseItem = z.infer<typeof KPIEnergyDataBySourceAndUseItemSchema>;
+
+export type KPIEnergyDataBySourceAndUseCollection = {
+  Values: KPIEnergyDataBySourceAndUseItem[];
+  SubmittedBy: string;
+  SubmittedAt: string;
+  AdditionalInformation?: string;
+  Source?: string;
+  ReasonForChangeOrUpdate?: string;
+  Signature?: Signature;
+  History?: KPIEnergyDataBySourceAndUseCollection[];
+};
+
+export const KPIEnergyDataBySourceAndUseCollectionSchema: z.ZodType<KPIEnergyDataBySourceAndUseCollection> =
+  z.lazy(() =>
+    z.object({
+      Values: z.array(KPIEnergyDataBySourceAndUseItemSchema),
+      SubmittedBy: z.string(),
+      SubmittedAt: z.string().datetime(),
+      AdditionalInformation: z.string().optional(),
+      Source: z.string().optional(),
+      ReasonForChangeOrUpdate: z.string().optional(),
+      Signature: SignatureSchema.optional(),
+      History: z.array(KPIEnergyDataBySourceAndUseCollectionSchema).optional(),
     }),
   );
 
@@ -172,7 +246,7 @@ export const PropertyRelatedDataSchema = z.object({
   KPI_5_4_GrossInternalArea: KPIValueElementSchema.optional(),
   KPI_5_5_Rental_Area: KPIValueElementSchema.optional(),
   KPI_6_1_Object_Is_Taxonomy_Aligned: KPIValueElementSchema.optional(),
-});
+}).strict();
 
 export const EnergyPerformanceSchema = z.object({
   KPI_7_1_Energy_Performance_Certificate: KPIValueElementSchema.optional(),
@@ -183,13 +257,14 @@ export const EnergyPerformanceSchema = z.object({
   KPI_7_6_Delivered_Energy_Calculated: KPIValueElementSchema.optional(),
   KPI_7_7_EPC_Expiry_Date: KPIValueElementSchema.optional(),
   KPI_7_8_EPC_Type: KPIValueElementSchema.optional(),
-});
+}).strict();
 
 export const EnergyConsumptionSchema = z.object({
   KPI_8_1_EnergyCarriersForHeating: KPIValueListSchema.optional(),
   KPI_8_2_MeteredEnergyConsumption: KPIValueListSchema.optional(),
-  KPI_8_3_MeteredEnergyConsumptionAsTable: KPIValueListSchema.optional(),
-});
+  KPI_8_3_MeteredEnergyConsumptionAsTable:
+    KPIEnergyDataBySourceAndUseCollectionSchema.optional(),
+}).strict();
 
 export const GreenhouseGasesSchema = z.object({
   KPI_9_1_DirectEmissions: KPIValueListSchema.optional(),
@@ -199,12 +274,12 @@ export const GreenhouseGasesSchema = z.object({
   KPI_9_5_AreIndirectEmissionsBasedOnMarketOrOnLocation:
     KPIValueElementSchema.optional(),
   KPI_9_6_CO2EmissionsFactorPerCarrier: KPIValueListSchema.optional(),
-});
+}).strict();
 
 export const ExtendedDataSchema = z.object({
   MaximumPrimaryEnergyDemand_Metered: z.number().optional(),
   MaximumPrimaryEnergyDemand_Calculated: z.number().optional(),
-});
+}).strict();
 
 export const MetaDataSchema = z.object({
   LocalAssetID: z.string().optional(),
@@ -216,10 +291,10 @@ export const MetaDataSchema = z.object({
   BuildingCity: z.string().optional(),
   BuildingState: z.string().optional(),
   BuildingCountry: z.string().optional(),
-});
+}).strict();
 
 // =============================================================================
-// Root Schema (V0.9.0 — all fields optional for partial submissions)
+// Root Schema (V0.9.2 — all fields optional for partial submissions)
 // =============================================================================
 
 export const KpiDataSchema = z.object({
@@ -230,12 +305,13 @@ export const KpiDataSchema = z.object({
   Energy_Consumption: EnergyConsumptionSchema.optional(),
   Greenhouse_Gases: GreenhouseGasesSchema.optional(),
   Extended_Data: ExtendedDataSchema.optional(),
-});
+  Signature: SignatureSchema.optional(),
+}).strict();
 
 export type KpiData = z.infer<typeof KpiDataSchema>;
 
 // =============================================================================
-// V0.9.0 Section names (for iteration)
+// V0.9.2 Section names (for iteration)
 // =============================================================================
 
 export const KPI_SECTIONS = [

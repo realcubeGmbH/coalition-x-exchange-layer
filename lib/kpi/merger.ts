@@ -1,6 +1,7 @@
 import type {
   KPIValueElement,
   KPIValueList,
+  KPIEnergyDataBySourceAndUseCollection,
   KpiData,
   KpiSectionName,
 } from "./schema";
@@ -23,7 +24,10 @@ export interface MergeResult {
   conflictedKpis: string[];
 }
 
-type KpiElement = KPIValueElement | KPIValueList;
+type KpiElement =
+  | KPIValueElement
+  | KPIValueList
+  | KPIEnergyDataBySourceAndUseCollection;
 type SectionData = Record<string, KpiElement>;
 
 // =============================================================================
@@ -73,7 +77,12 @@ export function mergeKpiData(
         }
 
         const def = SCHEMA_KEY_MAP.get(kpiKey);
-        if (def?.elementType === "KPIValueList") {
+        if (def?.elementType === "KPIEnergyDataBySourceAndUseCollection") {
+          mergeEnergyTable(
+            existingElement as KPIEnergyDataBySourceAndUseCollection,
+            newElement as KPIEnergyDataBySourceAndUseCollection,
+          );
+        } else if (def?.elementType === "KPIValueList") {
           mergeValueList(
             existingElement as KPIValueList,
             newElement as KPIValueList,
@@ -117,11 +126,28 @@ function mergeValueElement(
   incoming: KPIValueElement,
 ): void {
   const historicalEntry = stripHistoryElement(existing);
+  if (incoming.ReasonForChangeOrUpdate) {
+    historicalEntry.ReasonForChangeOrUpdate = incoming.ReasonForChangeOrUpdate;
+  }
   incoming.History = [historicalEntry, ...(existing.History ?? [])];
 }
 
 function mergeValueList(existing: KPIValueList, incoming: KPIValueList): void {
   const historicalEntry = stripHistoryList(existing);
+  if (incoming.ReasonForChangeOrUpdate) {
+    historicalEntry.ReasonForChangeOrUpdate = incoming.ReasonForChangeOrUpdate;
+  }
+  incoming.History = [historicalEntry, ...(existing.History ?? [])];
+}
+
+function mergeEnergyTable(
+  existing: KPIEnergyDataBySourceAndUseCollection,
+  incoming: KPIEnergyDataBySourceAndUseCollection,
+): void {
+  const historicalEntry = stripHistoryEnergyTable(existing);
+  if (incoming.ReasonForChangeOrUpdate) {
+    historicalEntry.ReasonForChangeOrUpdate = incoming.ReasonForChangeOrUpdate;
+  }
   incoming.History = [historicalEntry, ...(existing.History ?? [])];
 }
 
@@ -135,6 +161,13 @@ function stripHistoryElement(element: KPIValueElement): KPIValueElement {
 }
 
 function stripHistoryList(element: KPIValueList): KPIValueList {
+  const { History: _, ...rest } = element;
+  return { ...rest, History: [] };
+}
+
+function stripHistoryEnergyTable(
+  element: KPIEnergyDataBySourceAndUseCollection,
+): KPIEnergyDataBySourceAndUseCollection {
   const { History: _, ...rest } = element;
   return { ...rest, History: [] };
 }

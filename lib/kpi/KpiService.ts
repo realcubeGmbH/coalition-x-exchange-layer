@@ -25,6 +25,7 @@ import type { KpiData } from "./schema";
 import { validateDependencies } from "./validators";
 import type { ValidationError } from "./validators";
 import { validateInitialSubmission, extractScenarioInputs } from "./scenarios";
+import { getKpiSigningService } from "../connectors/KpiSigningService";
 import type { KpiRecord, ValidationStatus, DataSource } from "@prisma/client";
 import type { ServiceContext } from "../domain/shared";
 
@@ -75,6 +76,7 @@ export interface KpiSubmissionResult {
     schemaVersion: string;
     validationStatus: ValidationStatus;
     validationErrors?: object[];
+    signingStatus?: "signed" | "pending" | "failed" | "skipped";
     createdAt: Date;
   };
   transactionId: string;
@@ -296,7 +298,7 @@ export class KpiService {
   }
 
   /**
-   * Submit KPI with full V0.9.0 validation + enrichment + merge workflow
+   * Submit KPI with full V0.9.2 validation + enrichment + merge workflow
    */
   async submitKpiWithValidation(
     params: SubmitKpiWithValidationParams,
@@ -377,7 +379,7 @@ export class KpiService {
     // 5. Parse normalized input through C1 schema
     const c1Input: C1Input = {
       asset_id: assetId,
-      schema_version: "0.9.0",
+      schema_version: "0.9.2",
       kpis: normalized.kpis as C1Input["kpis"],
     };
     const parseResult = C1InputSchema.safeParse(c1Input);
@@ -394,7 +396,7 @@ export class KpiService {
       }));
     }
 
-    // 6. Enrich slim input into V0.9.0 rich objects
+    // 6. Enrich slim input into V0.9.2 rich objects
     let enrichedData: KpiData | null = null;
     if (parseResult.success) {
       enrichedData = enrichKpiInput(parseResult.data, {
@@ -501,7 +503,7 @@ export class KpiService {
           }
         }
 
-        // 8. Validate merged result against V0.9.0 schema
+        // 8. Validate merged result against V0.9.2 schema
         const schemaResult = KpiDataSchema.safeParse(mergedData);
         if (!schemaResult.success) {
           validationStatus = "FAILED";
@@ -612,7 +614,7 @@ export class KpiService {
         submissionId: submission.id,
         dataVersion: nextDataVersion,
         schemaVersionId: schema.id,
-        kpiData: mergedData,
+        kpiData: toJsonValue(mergedData),
         checksum,
         validationStatus: recordValidationStatus,
         externalAssetId: asset.externalId || undefined,
@@ -620,14 +622,47 @@ export class KpiService {
       },
     });
 
-    // 14. Complete submission
+    // 14. Trust Layer signing via C3
+    let signingStatus: "signed" | "failed" | "skipped" = "skipped";
+    let signedKpiData: Record<string, unknown> | undefined;
+
+    if (recordValidationStatus === "PASSED" && process.env.TRUST_LAYER_URL) {
+      try {
+        const result = await getKpiSigningService().signSubmittedKpis(
+          kpiRecord.id,
+          organizationId,
+          assetId,
+          { userId: ctx.userId, isOrgLevel: ctx.isOrgLevel },
+        );
+
+        if (result.signed) {
+          signingStatus = "signed";
+          signedKpiData = result.signedKpiData as Record<string, unknown> | undefined;
+        } else {
+          signingStatus = "failed";
+          this.logger.warn("Trust Layer signing failed", {
+            data: { kpiRecordId: kpiRecord.id, error: result.error },
+          });
+        }
+      } catch (err) {
+        signingStatus = "failed";
+        this.logger.warn("Trust Layer signing exception", {
+          data: {
+            kpiRecordId: kpiRecord.id,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+
+    // 15. Complete submission (after signing attempt)
     const responseTime = Date.now() - startTime;
     await prisma.submission.update({
       where: { id: submission.id },
       data: { responseTime, completedAt: new Date() },
     });
 
-    // 15. Audit log
+    // 16. Audit log
     await this.logger.audit({
       action: "KPI_SUBMITTED",
       resource: "KpiRecord",
@@ -658,7 +693,9 @@ export class KpiService {
         dataVersion: kpiRecord.dataVersion,
         schemaVersion: schema.version,
         validationStatus: recordValidationStatus,
+        signingStatus,
         createdAt: kpiRecord.createdAt,
+        ...(signingStatus === "signed" && signedKpiData && { kpiData: signedKpiData }),
       },
       transactionId: submission.id,
       status: 201,

@@ -48,7 +48,10 @@ export interface KpiRelevance {
   nonResidential: boolean;
 }
 
-export type KpiElementType = "KPIValueElement" | "KPIValueList";
+export type KpiElementType =
+  | "KPIValueElement"
+  | "KPIValueList"
+  | "KPIEnergyDataBySourceAndUseCollection";
 
 export type KpiSection =
   | "Property_Related_Data"
@@ -845,7 +848,7 @@ export const KPI_REGISTRY: Record<string, KpiDefinition> = {
       residential: true,
       nonResidential: true,
     },
-    elementType: "KPIValueList",
+    elementType: "KPIEnergyDataBySourceAndUseCollection",
     schemaKey: "KPI_8_3_MeteredEnergyConsumptionAsTable",
     schemaSection: "Energy_Consumption",
   },

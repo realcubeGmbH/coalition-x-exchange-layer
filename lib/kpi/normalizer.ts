@@ -2,7 +2,7 @@
  * KPI Input Normalizer
  *
  * Accepts KPI input in any supported format and restructures it
- * into the V0.9.0 section/key layout expected by C1InputSchema.
+ * into the V0.9.2 section/key layout expected by C1InputSchema.
  *
  * Supported input formats (per Connector 1 AC3):
  *   - API format:    { "kpi_1-1": "2025-10-15" }
@@ -66,7 +66,7 @@ function resolveKey(key: string): KpiDefinition | null {
 }
 
 /**
- * Check whether the input is already in V0.9.0 sectioned format.
+ * Check whether the input is already in V0.9.2 sectioned format.
  * Returns true if any top-level key matches a known section name.
  */
 function isAlreadySectioned(input: Record<string, unknown>): boolean {
@@ -74,7 +74,7 @@ function isAlreadySectioned(input: Record<string, unknown>): boolean {
 }
 
 /**
- * Normalize a flat KPI object into V0.9.0 sectioned structure.
+ * Normalize a flat KPI object into V0.9.2 sectioned structure.
  *
  * @example
  * // Flat API format

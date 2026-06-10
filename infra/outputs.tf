@@ -56,6 +56,16 @@ output "database_url_secret_arn" {
   value       = aws_secretsmanager_secret.database_url.arn
 }
 
+output "bastion_public_ip" {
+  description = "Public IP of the bastion host"
+  value       = var.create_bastion ? aws_instance.bastion[0].public_ip : null
+}
+
+output "bastion_ssh_tunnel_command" {
+  description = "SSH command to tunnel to RDS"
+  value       = var.create_bastion ? "ssh -i ~/.ssh/coalition-bastion -f -N -L 15432:${aws_db_instance.main.endpoint}:5432 ec2-user@${aws_instance.bastion[0].public_ip}" : null
+}
+
 # =============================================================================
 # ECS OUTPUTS
 # =============================================================================

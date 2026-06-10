@@ -29,7 +29,7 @@ Partners send a **slim JSON payload** — just KPI keys and their values. The Ex
 
 | | |
 |---|---|
-| **Schema** | V0.9.0 (ZIA Basic Set of KPIs) |
+| **Schema** | V0.9.2 (ZIA Basic Set of KPIs) |
 | **Auth** | HTTPS + OAuth 2.0 (JWT) |
 | **Format** | JSON — partial submissions allowed, data merges automatically |
 | **Single asset** | `POST /api/assets/{asset_id}/kpis` |
@@ -41,7 +41,7 @@ Partners send a **slim JSON payload** — just KPI keys and their values. The Ex
 
 ```json
 {
-  "schema_version": "0.9.0",
+  "schema_version": "0.9.2",
   "kpis": {
     "Property_Related_Data": {
       "KPI_1_1_Date_Of_Building_Permit": "2020-01-15",
@@ -143,4 +143,4 @@ You can submit **any subset** of KPIs. Partial submissions merge with existing d
 
 ---
 
-<sub>Schema version: V0.9.0 · Last updated: May 2026</sub>
+<sub>Schema version: V0.9.2 · Last updated: May 2026</sub>

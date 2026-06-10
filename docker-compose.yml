@@ -18,6 +18,45 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://coalition:coalition_dev@postgres:5432/coalition_x
+      TRUST_LAYER_URL: http://trust-layer:4100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trust-layer:
+        condition: service_healthy
+
+  trust-layer:
+    build:
+      context: ../trust-layer
+      dockerfile: Dockerfile
+    container_name: trust-layer-app
+    restart: 'always'
+    ports:
+      - 4100:4100
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10k'
+        max-file: '3'
+    environment:
+      PORT: '4100'
+      DATABASE_URL: postgresql://coalition:coalition_dev@postgres:5432/trust_layer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:4100/health']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  trust-layer-migrate:
+    build:
+      context: ../trust-layer
+      dockerfile: Dockerfile.prisma.migrate
+    container_name: trust-layer-migrate
+    environment:
+      DATABASE_URL: postgresql://coalition:coalition_dev@postgres:5432/trust_layer
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,6 +68,7 @@ services:
       - 5432:5432
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./init-trust-layer-db.sql:/docker-entrypoint-initdb.d/init-trust-layer-db.sql
     environment:
       POSTGRES_DB: coalition_x
       POSTGRES_USER: coalition
@@ -41,4 +81,3 @@ services:
 
 volumes:
   postgres-data:
-
